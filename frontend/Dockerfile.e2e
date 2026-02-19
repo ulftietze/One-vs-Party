@@ -1,0 +1,12 @@
+FROM mcr.microsoft.com/playwright:v1.58.2-jammy
+
+WORKDIR /work/frontend
+
+COPY package.json ./
+RUN npm install
+
+COPY . .
+
+ENV CI=1
+
+CMD ["npx", "playwright", "test"]

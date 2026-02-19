@@ -1,0 +1,5 @@
+.DS_Store
+.env
+.idea/
+frontend/playwright-report/
+frontend/test-results/
