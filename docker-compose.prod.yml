@@ -1,0 +1,72 @@
+services:
+  db:
+    image: mariadb:11
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MARIADB_DATABASE: ${MYSQL_DATABASE}
+      MARIADB_USER: ${MYSQL_USER}
+      MARIADB_PASSWORD: ${MYSQL_PASSWORD}
+    volumes:
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mariadb-admin", "ping", "-h", "localhost", "-uroot", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    networks:
+      - app
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_NAME: ${MYSQL_DATABASE}
+      DB_USER: ${MYSQL_USER}
+      DB_PASS: ${MYSQL_PASSWORD}
+      APP_SECRET: ${APP_SECRET}
+      ADMIN_TOKEN: ${ADMIN_TOKEN}
+      PORT: 3000
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL}
+      JSON_BODY_LIMIT: ${JSON_BODY_LIMIT:-16mb}
+      MEDIA_ROOT: /app/media
+      QUESTION_PACKAGES_ROOT: /app/question-packages
+      MEDIA_UPLOAD_MAX_BYTES: ${MEDIA_UPLOAD_MAX_BYTES:-0}
+      UPLOAD_REQUEST_TIMEOUT_MS: ${UPLOAD_REQUEST_TIMEOUT_MS:-0}
+      AUTO_REVEAL_DELAY_MS: ${AUTO_REVEAL_DELAY_MS:-1700}
+      FFMPEG_VIDEO_CRF: ${FFMPEG_VIDEO_CRF:-28}
+      FFMPEG_VIDEO_MAX_WIDTH: ${FFMPEG_VIDEO_MAX_WIDTH:-1920}
+      FFMPEG_VIDEO_MAX_HEIGHT: ${FFMPEG_VIDEO_MAX_HEIGHT:-1080}
+      FFMPEG_AUDIO_BITRATE_K: ${FFMPEG_AUDIO_BITRATE_K:-128}
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${BACKEND_PORT:-3000}:3000"
+    volumes:
+      - media_data:/app/media
+      - question_packages_data:/app/question-packages
+    networks:
+      - app
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:-8080}:80"
+    networks:
+      - app
+
+volumes:
+  db_data:
+  media_data:
+  question_packages_data:
+
+networks:
+  app:
