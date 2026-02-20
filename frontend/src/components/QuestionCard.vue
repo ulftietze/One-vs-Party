@@ -78,17 +78,17 @@
       </div>
     </div>
 
-    <div v-else-if="question.allowMultiple" style="display:flex; flex-direction:column; gap:10px;">
+    <div v-else-if="question.allowMultiple" class="option-list">
       <label v-for="o in question.options" :key="o.id"
-             style="display:flex; gap:12px; align-items:center; padding:14px; min-height:60px; border:1px solid #ddd; border-radius:12px; cursor:pointer;"
-             :style="multi.includes(String(o.id)) ? 'background:#f0f7ff; border-color:#004e96;' : ''">
-        <input type="checkbox" :disabled="disabled" :value="String(o.id)" v-model="multi" style="width:20px; height:20px;" />
-        <div style="display:grid; gap:8px;">
-          <img v-if="o.image" :src="o.image" alt="Option image"
-               @click.prevent.stop="openImageViewer(o.image)"
-               class="zoomable-image"
-               style="max-width:140px; max-height:84px; object-fit:cover; border:1px solid #ddd; border-radius:8px; background:#fff;" />
-          <span data-no-i18n="1" style="font-weight:700;">{{ o.text || "Option" }}</span>
+             :class="['option-tile', 'option-tile--check', { 'is-selected': multi.includes(String(o.id)) }]">
+        <input type="checkbox" :disabled="disabled" :value="String(o.id)" v-model="multi" class="option-check" />
+        <div :class="['option-content', { 'has-media': !!o.image }]">
+          <div v-if="o.image" class="option-media-wrap">
+            <img :src="o.image" alt="Option image"
+                 @click.prevent.stop="openImageViewer(o.image)"
+                 class="zoomable-image option-media" />
+          </div>
+          <span data-no-i18n="1" class="option-text">{{ o.text || "Option" }}</span>
         </div>
       </label>
       <div class="submit-sticky">
@@ -99,19 +99,18 @@
       </div>
     </div>
 
-    <div v-else style="display:flex; flex-direction:column; gap:10px;">
+    <div v-else class="option-list">
       <button v-for="o in question.options" :key="o.id"
               :disabled="disabled"
               @click="pickSingle(String(o.id))"
-              :style="single === String(o.id)
-                ? 'text-align:left; padding:16px; min-height:60px; border-radius:12px; border:2px solid #004e96; background:#f0f7ff; font-weight:700; font-size:17px; cursor:pointer;'
-                : 'text-align:left; padding:16px; min-height:60px; border-radius:12px; border:2px solid #ddd; background:#fff; font-weight:700; font-size:17px; cursor:pointer;'">
-        <div style="display:grid; gap:8px;">
-          <img v-if="o.image" :src="o.image" alt="Option image"
-               @click.stop.prevent="openImageViewer(o.image)"
-               class="zoomable-image"
-               style="max-width:180px; max-height:100px; object-fit:cover; border:1px solid #ddd; border-radius:8px; background:#fff;" />
-          <span data-no-i18n="1">{{ o.text || "Option" }}</span>
+              :class="['option-tile', 'option-tile--single', { 'is-selected': single === String(o.id) }]">
+        <div :class="['option-content', { 'has-media': !!o.image }]">
+          <div v-if="o.image" class="option-media-wrap">
+            <img :src="o.image" alt="Option image"
+                 @click.stop.prevent="openImageViewer(o.image)"
+                 class="zoomable-image option-media" />
+          </div>
+          <span data-no-i18n="1" class="option-text">{{ o.text || "Option" }}</span>
         </div>
       </button>
     </div>
@@ -411,6 +410,81 @@ watch(() => props.selectedOptionIds, syncFromProps, { deep: true });
   padding: 16px;
 }
 
+.option-list {
+  display: grid;
+  gap: 10px;
+}
+
+.option-tile {
+  width: 100%;
+  text-align: left;
+  border-radius: 12px;
+  border: 2px solid #d1d5db;
+  background: #fff;
+  color: #0f172a;
+  min-height: 78px;
+}
+
+.option-tile--single {
+  padding: 14px;
+  cursor: pointer;
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.option-tile--check {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px;
+  cursor: pointer;
+}
+
+.option-tile.is-selected {
+  border-color: #004e96;
+  background: #f0f7ff;
+}
+
+.option-check {
+  width: 20px;
+  height: 20px;
+  margin-top: 8px;
+  flex: 0 0 auto;
+}
+
+.option-content {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+}
+
+.option-content.has-media {
+  grid-template-columns: 120px minmax(0, 1fr);
+}
+
+.option-media-wrap {
+  width: 120px;
+  height: 82px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid #d1d5db;
+  background: #fff;
+}
+
+.option-media {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.option-text {
+  font-weight: 800;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
 .question-card--dragging,
 .question-card--dragging * {
   user-select: none;
@@ -482,6 +556,18 @@ watch(() => props.selectedOptionIds, syncFromProps, { deep: true });
     position: static;
     padding-top: 0;
     background: transparent;
+  }
+}
+
+@media (max-width: 640px) {
+  .option-content.has-media {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+
+  .option-media-wrap {
+    width: 100%;
+    height: 140px;
   }
 }
 </style>

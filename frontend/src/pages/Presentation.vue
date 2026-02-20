@@ -127,12 +127,13 @@
             <div v-for="(o, optIdx) in presentedOrderOptions" :key="o.id" class="question-option"
                  :style="{ animationDelay: `${Math.min(optIdx, 8) * 70}ms` }"
                  style="padding:16px; border-radius:14px; border:2px solid #ddd; font-size:20px; font-weight:700; background:#fafafa;">
-              <div style="display:grid; gap:10px;">
-                <img v-if="o.image" :src="o.image" alt="Option image"
-                     class="clickable-image"
-                     @click="openFullscreenImage(o.image)"
-                     style="max-width:260px; max-height:140px; object-fit:cover; border:1px solid #ddd; border-radius:10px; background:#fff;" />
-                <span data-no-i18n="1">{{ o.text || "Option" }}</span>
+              <div :class="['present-option-body', { 'has-media': !!o.image }]">
+                <div v-if="o.image" class="present-option-media">
+                  <img :src="o.image" alt="Option image"
+                       class="clickable-image present-option-image"
+                       @click="openFullscreenImage(o.image)" />
+                </div>
+                <span data-no-i18n="1" class="present-option-text">{{ o.text || "Option" }}</span>
               </div>
             </div>
           </div>
@@ -141,12 +142,13 @@
             <div v-for="(o, optIdx) in currentQuestion.options" :key="o.id" class="question-option"
                  :style="{ animationDelay: `${Math.min(optIdx, 8) * 70}ms` }"
                  style="padding:16px; border-radius:14px; border:2px solid #ddd; font-size:20px; font-weight:700; background:#fafafa;">
-              <div style="display:grid; gap:10px;">
-                <img v-if="o.image" :src="o.image" alt="Option image"
-                     class="clickable-image"
-                     @click="openFullscreenImage(o.image)"
-                     style="max-width:260px; max-height:140px; object-fit:cover; border:1px solid #ddd; border-radius:10px; background:#fff;" />
-                <span data-no-i18n="1">{{ o.text || "Option" }}</span>
+              <div :class="['present-option-body', { 'has-media': !!o.image }]">
+                <div v-if="o.image" class="present-option-media">
+                  <img :src="o.image" alt="Option image"
+                       class="clickable-image present-option-image"
+                       @click="openFullscreenImage(o.image)" />
+                </div>
+                <span data-no-i18n="1" class="present-option-text">{{ o.text || "Option" }}</span>
               </div>
             </div>
           </div>
@@ -300,34 +302,19 @@
                      style="width:100%; max-height:52vh; border-radius:10px; background:#000;"></video>
             </div>
 
-            <template v-if="showVoteChart">
-              <div v-if="showLargeVoteChart"
-                   class="reveal-card"
-                   style="padding:16px; border-radius:14px; border:2px solid #004e96; background:#f0f7ff;">
-                <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
-                  <div style="font-size:14px; font-weight:900; text-transform:uppercase; color:#004e96; letter-spacing:0.05em;">
-                    Answer stats
-                  </div>
-                  <div style="font-size:14px; font-weight:700; color:#1f2937;">
-                    No solution configured for this question.
-                  </div>
+            <div v-if="showVoteChart"
+                 class="reveal-card"
+                 style="padding:16px; border-radius:14px; border:2px solid #004e96; background:#f0f7ff;">
+              <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
+                <div style="font-size:14px; font-weight:900; text-transform:uppercase; color:#004e96; letter-spacing:0.05em;">
+                  Answer stats
                 </div>
-                <GuestVoteBars :votes="guestVotes" :playerAnswer="revealedPlayerAnswer" :player-label="playerName" :compact="false" />
+                <div v-if="!hasRevealedSolution" style="font-size:14px; font-weight:700; color:#1f2937;">
+                  No solution configured for this question.
+                </div>
               </div>
-
-              <template v-else>
-                <button @click="chartOpen = !chartOpen"
-                        style="position:absolute; right:0; bottom:0; padding:8px 12px; border-radius:12px; border:1px solid #ddd; background:rgba(255,255,255,0.96); color:#004e96; font-weight:900; cursor:pointer; display:flex; gap:8px; align-items:center;">
-                  <span>Statistik</span>
-                  <span style="font-size:14px; line-height:1;">{{ chartOpen ? "▼" : "▲" }}</span>
-                </button>
-
-                <div :style="chartPanelStyle">
-                  <div style="font-size:12px; font-weight:900; text-transform:uppercase; color:#004e96; letter-spacing:0.05em;">Answer stats</div>
-                  <GuestVoteBars :votes="guestVotes" :playerAnswer="revealedPlayerAnswer" :player-label="playerName" :compact="true" />
-                </div>
-              </template>
-            </template>
+              <GuestVoteBars :votes="guestVotes" :playerAnswer="revealedPlayerAnswer" :player-label="playerName" :compact="false" />
+            </div>
           </div>
         </div>
       </div>
@@ -573,23 +560,6 @@ const hasRevealedSolution = computed(() => {
   const s = revealedSolution.value || {};
   return !!(String(s.text || "").trim() || s.image || s.audio || s.video);
 });
-const showLargeVoteChart = computed(() => showVoteChart.value && !hasRevealedSolution.value);
-
-const chartOpen = ref(true);
-const chartPanelStyle = computed(() => ({
-  position: "absolute",
-  right: "0",
-  bottom: "46px",
-  width: "340px",
-  border: "1px solid #ddd",
-  borderRadius: "14px",
-  background: "rgba(255,255,255,0.96)",
-  padding: "10px 10px 14px",
-  opacity: chartOpen.value ? "1" : "0",
-  transform: chartOpen.value ? "translateY(0)" : "translateY(16px)",
-  pointerEvents: chartOpen.value ? "auto" : "none",
-  transition: "opacity 220ms ease, transform 220ms ease"
-}));
 
 const playerAnswered = ref(false);
 let lastQuestionId = null;
@@ -887,6 +857,38 @@ async function next() {
   will-change: transform, opacity;
 }
 
+.present-option-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+}
+
+.present-option-body.has-media {
+  grid-template-columns: 220px minmax(0, 1fr);
+}
+
+.present-option-media {
+  width: 220px;
+  height: 132px;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid #d1d5db;
+  background: #fff;
+}
+
+.present-option-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.present-option-text {
+  overflow-wrap: anywhere;
+  line-height: 1.25;
+}
+
 .progress-card {
   background: linear-gradient(135deg, #ffffff 0%, #f8fbff 100%);
   box-shadow: 0 8px 22px rgba(15, 23, 42, 0.07);
@@ -1136,6 +1138,18 @@ async function next() {
 .order-status {
   font-size: 18px;
   font-weight: 900;
+}
+
+@media (max-width: 900px) {
+  .present-option-body.has-media {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+
+  .present-option-media {
+    width: 100%;
+    height: 190px;
+  }
 }
 
 @keyframes panel-enter {
