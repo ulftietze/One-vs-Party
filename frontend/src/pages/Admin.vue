@@ -110,6 +110,10 @@
             Show current score
           </label>
           <label style="display:flex; gap:8px; align-items:center; font-weight:700; cursor:pointer;">
+            <input type="checkbox" v-model="showQuizTitle" @change="savePublish" style="width:18px; height:18px;" />
+            {{ t("Show quiz title (presentation)") }}
+          </label>
+          <label style="display:flex; gap:8px; align-items:center; font-weight:700; cursor:pointer;">
             <input type="checkbox" v-model="autoRevealEnabled" @change="savePublish" style="width:18px; height:18px;" />
             Auto reveal when everyone has submitted
           </label>
@@ -328,6 +332,7 @@
                   <div style="font-size:13px; opacity:0.8; margin-top:4px;">
                     Type: {{ questionTypeLabel(entry.question.type) }}
                     · {{ entry.question.Options?.length || 0 }} options
+                    · Guests ≥ {{ normalizeGuestThresholdPercent(entry.question.guestCorrectThresholdPercent) }}%
                     <span v-if="entry.question.type==='risk'"> · +/-2 points</span>
                   </div>
                   <div style="margin-top:8px;">
@@ -395,6 +400,11 @@
             <option value="order">Order question</option>
             <option value="risk">Risk question (+2 / -2)</option>
           </select>
+          <label style="display:grid; gap:6px; padding:8px 0;">
+            <span style="font-size:13px; font-weight:800; color:#334155;">{{ t("Guest correct threshold (%)") }}</span>
+            <input v-model.number="guestCorrectThresholdPercent" type="number" min="0" max="100" step="1"
+                   style="padding:10px 12px; border-radius:12px; border:1px solid #ddd;" />
+          </label>
         </div>
         <div v-if="showQuestionError('blockLabel')" class="field-error">{{ questionErrors.blockLabel }}</div>
 
@@ -583,6 +593,7 @@ const playerWinText = ref("");
 const tieWinText = ref("");
 const isPublished = ref(false);
 const showScore = ref(true);
+const showQuizTitle = ref(true);
 const autoRevealEnabled = ref(true);
 const autoRevealDelaySeconds = ref(2);
 const uiLanguage = ref("en");
@@ -609,6 +620,7 @@ const solutionMediaKind = ref("");
 const solutionImage = ref("");
 const solutionAudio = ref("");
 const solutionVideo = ref("");
+const guestCorrectThresholdPercent = ref(50);
 const options = ref([
   { text: "", image: "", isCorrect: false },
   { text: "", image: "", isCorrect: false },
@@ -824,6 +836,13 @@ function normalizeAutoRevealDelaySeconds(value) {
   return Math.max(1, Math.min(60, Math.round(n)));
 }
 
+function normalizeGuestThresholdPercent(value) {
+  if (value === null || value === undefined || String(value).trim() === "") return 50;
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 50;
+  return Math.max(0, Math.min(100, Math.round(n)));
+}
+
 function questionTypeLabel(type) {
   const t = String(type || "choice");
   if (t === "estimate") return "Estimate question";
@@ -899,6 +918,7 @@ async function load() {
   playerName.value = data.player?.nickname || "";
   isPublished.value = !!data.game?.isPublished;
   showScore.value = data.game?.showScore !== false;
+  showQuizTitle.value = data.game?.showQuizTitle !== false;
   autoRevealEnabled.value = data.game?.autoRevealEnabled !== false;
   autoRevealDelaySeconds.value = normalizeAutoRevealDelaySeconds(data.game?.autoRevealDelaySeconds);
   uiLanguage.value = String(data.game?.uiLanguage || "en");
@@ -1080,6 +1100,7 @@ function resetForm() {
   solutionImage.value = "";
   solutionAudio.value = "";
   solutionVideo.value = "";
+  guestCorrectThresholdPercent.value = 50;
   options.value = [
     { text: "", image: "", isCorrect: false },
     { text: "", image: "", isCorrect: false },
@@ -1164,6 +1185,7 @@ async function saveQuestion() {
     solutionImage: solutionImage.value,
     solutionAudio: solutionAudio.value,
     solutionVideo: solutionVideo.value,
+    guestCorrectThresholdPercent: normalizeGuestThresholdPercent(guestCorrectThresholdPercent.value),
     options: options.value.map((o, idx) => ({
       text: o.text,
       image: o.image || "",
@@ -1203,6 +1225,7 @@ function beginEdit(q) {
   setSolutionMedia(solutionMediaUrl, solutionMediaType);
   const hasSolutionText = !!String(solutionText.value || "").trim();
   const hasSolutionMedia = !!String(solutionMedia.value || "").trim();
+  guestCorrectThresholdPercent.value = normalizeGuestThresholdPercent(q.guestCorrectThresholdPercent);
   if (hasSolutionText && hasSolutionMedia) solutionType.value = "both";
   else if (hasSolutionText) solutionType.value = "text";
   else if (hasSolutionMedia) solutionType.value = "image";
@@ -1497,6 +1520,7 @@ async function savePublish() {
   const { data } = await api.post(`/admin/${props.token}/publish`, {
     isPublished: isPublished.value,
     showScore: showScore.value,
+    showQuizTitle: showQuizTitle.value,
     autoRevealEnabled: autoRevealEnabled.value,
     autoRevealDelaySeconds: autoRevealDelaySeconds.value,
     uiLanguage: uiLanguage.value || "en"
@@ -1545,6 +1569,7 @@ function setupSocket() {
       if (s?.player?.nickname) playerName.value = s.player.nickname;
       isPublished.value = !!s.game?.isPublished;
       showScore.value = s.game?.showScore !== false;
+      showQuizTitle.value = s.game?.showQuizTitle !== false;
       autoRevealEnabled.value = s.game?.autoRevealEnabled !== false;
       autoRevealDelaySeconds.value = normalizeAutoRevealDelaySeconds(s.game?.autoRevealDelaySeconds);
       uiLanguage.value = String(s.game?.uiLanguage || "en");
@@ -1558,6 +1583,7 @@ function setupSocket() {
         game.value = data.game;
         isPublished.value = !!data.game?.isPublished;
         showScore.value = data.game?.showScore !== false;
+        showQuizTitle.value = data.game?.showQuizTitle !== false;
         autoRevealEnabled.value = data.game?.autoRevealEnabled !== false;
         autoRevealDelaySeconds.value = normalizeAutoRevealDelaySeconds(data.game?.autoRevealDelaySeconds);
         uiLanguage.value = String(data.game?.uiLanguage || "en");

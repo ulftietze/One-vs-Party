@@ -22,6 +22,8 @@ export function defineModels(sequelize) {
 
     // Steuert, ob der Stand auf der Präsentationsseite/Gäste-Seite sichtbar ist
     showScore: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
+    // Steuert, ob der Quiztitel auf der Präsentationsseite sichtbar ist
+    showQuizTitle: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
     // Auto-Reveal: automatisch auflösen, wenn alle abgegeben haben
     autoRevealEnabled: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
     autoRevealDelaySeconds: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 2 },
@@ -64,7 +66,9 @@ export function defineModels(sequelize) {
     solutionText: { type: DataTypes.TEXT, allowNull: false, defaultValue: "" },
     solutionImage: { type: DataTypes.TEXT("long"), allowNull: false, defaultValue: "" },
     solutionAudio: { type: DataTypes.TEXT("long"), allowNull: false, defaultValue: "" },
-    solutionVideo: { type: DataTypes.TEXT("long"), allowNull: false, defaultValue: "" }
+    solutionVideo: { type: DataTypes.TEXT("long"), allowNull: false, defaultValue: "" },
+    // Ab welcher Quote korrekter Gästeantworten die Gäste-Frage als "korrekt" gilt
+    guestCorrectThresholdPercent: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 50 }
   });
 
   const Option = sequelize.define("Option", {

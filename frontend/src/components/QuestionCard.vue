@@ -1,5 +1,5 @@
 <template>
-  <div class="question-card">
+  <div :class="['question-card', { 'question-card--dragging': !!draggingOrderId }]">
     <div data-no-i18n="1" style="font-size:18px; font-weight:700; margin-bottom:12px;">
       {{ question.text }}
     </div>
@@ -272,15 +272,18 @@ function startOrderDrag(optionId) {
   const id = String(optionId);
   draggingOrderId.value = id;
   orderDropIndex.value = order.value.findIndex(x => String(x) === id);
+  setGlobalUserSelect(false);
 }
 
 function endOrderDrag() {
   draggingOrderId.value = null;
   orderDropIndex.value = null;
+  setGlobalUserSelect(true);
 }
 
 function startOrderPointer(evt, optionId) {
   if (props.disabled) return;
+  if (evt?.cancelable) evt.preventDefault();
   startOrderDrag(optionId);
   if (evt?.currentTarget?.setPointerCapture && evt?.pointerId !== undefined) {
     try { evt.currentTarget.setPointerCapture(evt.pointerId); } catch {}
@@ -294,6 +297,7 @@ function onOrderRowPointerDown(evt, optionId) {
   if (props.disabled || draggingOrderId.value) return;
   const interactive = evt?.target?.closest?.("button,input,textarea,select,a,label");
   if (interactive) return;
+  if (evt?.cancelable) evt.preventDefault();
   startOrderPointer(evt, optionId);
 }
 
@@ -357,11 +361,18 @@ function finalizeOrderDrag() {
   const arr = [...base];
   arr.splice(idx, 0, dragId);
   order.value = arr;
-  draggingOrderId.value = null;
-  orderDropIndex.value = null;
+  endOrderDrag();
+}
+
+function setGlobalUserSelect(enabled) {
+  if (typeof document === "undefined") return;
+  const value = enabled ? "" : "none";
+  document.body.style.userSelect = value;
+  document.body.style.webkitUserSelect = value;
 }
 
 onBeforeUnmount(() => {
+  setGlobalUserSelect(true);
   window.removeEventListener("pointermove", onOrderPointerMove);
   window.removeEventListener("pointerup", onOrderPointerUp);
   window.removeEventListener("pointercancel", onOrderPointerUp);
@@ -398,6 +409,12 @@ watch(() => props.selectedOptionIds, syncFromProps, { deep: true });
   border: 1px solid #e5e5e5;
   border-radius: 14px;
   padding: 16px;
+}
+
+.question-card--dragging,
+.question-card--dragging * {
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .submit-btn {

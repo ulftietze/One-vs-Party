@@ -183,6 +183,13 @@ function normalizeAutoRevealDelaySeconds(raw) {
   return Math.max(MIN_AUTO_REVEAL_DELAY_SECONDS, Math.min(MAX_AUTO_REVEAL_DELAY_SECONDS, rounded));
 }
 
+function normalizeGuestThresholdPercent(raw) {
+  if (raw === null || raw === undefined || String(raw).trim() === "") return 50;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return 50;
+  return Math.max(0, Math.min(100, Math.round(parsed)));
+}
+
 function autoRevealDelayMsForGame(game) {
   return normalizeAutoRevealDelaySeconds(game?.autoRevealDelaySeconds) * 1000;
 }
@@ -1036,6 +1043,7 @@ async function questionToPackageQuestion(q) {
     type: normalizeQuestionType(q.type),
     allowMultiple: !!q.allowMultiple,
     blockLabel: normalizeBlockLabel(q.blockLabel || "General"),
+    guestCorrectThresholdPercent: normalizeGuestThresholdPercent(q.guestCorrectThresholdPercent),
     promptMedia: promptVideo || promptAudio || promptImage || "",
     promptImage,
     promptAudio,
@@ -1073,6 +1081,7 @@ async function normalizedPayloadToPackageQuestion(q) {
     type: normalizeQuestionType(q.type),
     allowMultiple: !!q.allowMultiple,
     blockLabel: normalizeBlockLabel(q.blockLabel || "General"),
+    guestCorrectThresholdPercent: normalizeGuestThresholdPercent(q.guestCorrectThresholdPercent),
     promptMedia: promptVideo || promptAudio || promptImage || "",
     promptImage,
     promptAudio,
@@ -1111,6 +1120,7 @@ function buildQuestionsCsv(questions) {
     "type",
     "allowMultiple",
     "blockLabel",
+    "guestCorrectThresholdPercent",
     "estimateTarget",
     "estimateTolerance",
     "promptImage",
@@ -1131,6 +1141,7 @@ function buildQuestionsCsv(questions) {
       q.type || "choice",
       q.allowMultiple ? "1" : "0",
       q.blockLabel || "General",
+      String(normalizeGuestThresholdPercent(q.guestCorrectThresholdPercent)),
       q.estimateTarget === null || q.estimateTarget === undefined ? "" : String(q.estimateTarget),
       q.estimateTolerance === null || q.estimateTolerance === undefined ? "0" : String(q.estimateTolerance),
       q.promptImage || "",
@@ -1247,6 +1258,7 @@ function parseQuestionsCsv(text) {
       type: String(get("type", "choice") || "choice"),
       allowMultiple,
       blockLabel: String(get("blockLabel", "General") || "General"),
+      guestCorrectThresholdPercent: normalizeGuestThresholdPercent(get("guestCorrectThresholdPercent", "50")),
       estimateTarget: Number.isFinite(estimateTarget) ? estimateTarget : null,
       estimateTolerance: Number.isFinite(estimateTolerance) ? estimateTolerance : 0,
       promptImage: String(get("promptImage", "") || ""),
@@ -1411,6 +1423,7 @@ async function insertQuestionsIntoGame(gameId, normalizedQuestions, { mode = "re
       promptImage: q.promptImage,
       promptAudio: q.promptAudio,
       promptVideo: q.promptVideo,
+      guestCorrectThresholdPercent: normalizeGuestThresholdPercent(q.guestCorrectThresholdPercent),
       estimateTarget: q.type === "estimate" ? q.estimateTarget : null,
       estimateTolerance: q.type === "estimate" ? q.estimateTolerance : 0,
       solutionType: q.solutionType,
@@ -1642,6 +1655,7 @@ function mapQuestionForSocket(question) {
     promptAudio: String(question.promptAudio || ""),
     promptVideo: String(question.promptVideo || ""),
     estimateTolerance: Number(question.estimateTolerance || 0),
+    guestCorrectThresholdPercent: normalizeGuestThresholdPercent(question.guestCorrectThresholdPercent),
     solutionType: question.solutionType || "none",
     options: sortedOptions(question).map(o => ({ id: o.id, text: o.text, image: String(o.image || "") }))
   };
@@ -1866,6 +1880,7 @@ async function emitGameState(gameId) {
       playerWinText: game.playerWinText,
       tieWinText: game.tieWinText,
       showScore: game.showScore,
+      showQuizTitle: game.showQuizTitle !== false,
       autoRevealEnabled: game.autoRevealEnabled !== false,
       autoRevealDelaySeconds: normalizeAutoRevealDelaySeconds(game.autoRevealDelaySeconds),
       lastStartedAt: game.lastStartedAt,
@@ -2111,6 +2126,7 @@ async function normalizeQuestionPayload(raw = {}) {
     type,
     allowMultiple,
     blockLabel: normalizeBlockLabel(raw.blockLabel),
+    guestCorrectThresholdPercent: normalizeGuestThresholdPercent(raw.guestCorrectThresholdPercent),
     promptImage,
     promptAudio,
     promptVideo,
@@ -2689,6 +2705,7 @@ app.post("/api/admin/:token/questions", requireToken, async (req, res) => {
       promptImage: payload.promptImage,
       promptAudio: payload.promptAudio,
       promptVideo: payload.promptVideo,
+      guestCorrectThresholdPercent: normalizeGuestThresholdPercent(payload.guestCorrectThresholdPercent),
       estimateTarget: payload.type === "estimate" ? payload.estimateTarget : null,
       estimateTolerance: payload.type === "estimate" ? payload.estimateTolerance : 0,
       solutionType: payload.solutionType,
@@ -2739,6 +2756,7 @@ app.put("/api/admin/:token/questions/:questionId", requireToken, async (req, res
       promptImage: payload.promptImage,
       promptAudio: payload.promptAudio,
       promptVideo: payload.promptVideo,
+      guestCorrectThresholdPercent: normalizeGuestThresholdPercent(payload.guestCorrectThresholdPercent),
       estimateTarget: payload.type === "estimate" ? payload.estimateTarget : null,
       estimateTolerance: payload.type === "estimate" ? payload.estimateTolerance : 0,
       solutionType: payload.solutionType,
@@ -2903,6 +2921,7 @@ app.post("/api/admin/:token/publish", requireToken, async (req, res) => {
   if (req.link.type !== "admin") return res.status(403).json({ error: "forbidden" });
   const isPublished = !!req.body?.isPublished;
   const showScore = req.body?.showScore !== undefined ? !!req.body.showScore : undefined;
+  const showQuizTitle = req.body?.showQuizTitle !== undefined ? !!req.body.showQuizTitle : undefined;
   const uiLanguage = req.body?.uiLanguage !== undefined
     ? normalizeUiLanguage(req.body?.uiLanguage)
     : undefined;
@@ -2915,6 +2934,7 @@ app.post("/api/admin/:token/publish", requireToken, async (req, res) => {
   
   const update = { isPublished };
   if (showScore !== undefined) update.showScore = showScore;
+  if (showQuizTitle !== undefined) update.showQuizTitle = showQuizTitle;
   if (uiLanguage !== undefined) update.uiLanguage = uiLanguage;
   if (autoRevealEnabled !== undefined) update.autoRevealEnabled = autoRevealEnabled;
   if (autoRevealDelaySeconds !== undefined) update.autoRevealDelaySeconds = autoRevealDelaySeconds;

@@ -75,53 +75,31 @@ function pointsForQuestion(question, isCorrect) {
   return isCorrect ? 2 : -2;
 }
 
-function keyForAnswer(question, answerRaw) {
-  const answer = normalizeAnswerForCompare(question, answerRaw);
-  if (!hasSubmittedAnswer(question, answer)) return "";
-  return answer.join(",");
+function normalizeGuestThresholdPercent(value) {
+  if (value === null || value === undefined || String(value).trim() === "") return 50;
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 50;
+  return Math.max(0, Math.min(100, Math.round(n)));
 }
 
 function guestTeamWinnerForQuestion(question, guestAnswers) {
-  const type = asQuestionType(question);
-  if (type === "estimate") {
-    const numericValues = guestAnswers
-      .map(a => Number(parseStoredAnswer(question, a.optionIds)[0]))
-      .filter(v => Number.isFinite(v))
-      .sort((a, b) => a - b);
-    if (!numericValues.length) return { winnerKey: null, isCorrect: false, hasAnswer: false };
-
-    const mid = Math.floor(numericValues.length / 2);
-    const teamGuess = numericValues.length % 2
-      ? numericValues[mid]
-      : (numericValues[mid - 1] + numericValues[mid]) / 2;
-    const key = String(teamGuess);
-    return {
-      winnerKey: key,
-      isCorrect: evaluateAnswer(question, [key]),
-      hasAnswer: true
-    };
+  const submittedAnswers = [];
+  for (const a of guestAnswers || []) {
+    const parsed = parseStoredAnswer(question, a?.optionIds);
+    if (!hasSubmittedAnswer(question, parsed)) continue;
+    submittedAnswers.push(parsed);
   }
+  if (!submittedAnswers.length) return { winnerKey: null, isCorrect: false, hasAnswer: false };
 
-  const counts = new Map();
-  for (const a of guestAnswers) {
-    const key = keyForAnswer(question, parseStoredAnswer(question, a.optionIds));
-    if (!key) continue;
-    counts.set(key, (counts.get(key) || 0) + 1);
-  }
-  if (counts.size === 0) return { winnerKey: null, isCorrect: false, hasAnswer: false };
+  const correctCount = submittedAnswers.reduce((sum, answer) => sum + (evaluateAnswer(question, answer) ? 1 : 0), 0);
+  const thresholdPercent = normalizeGuestThresholdPercent(question?.guestCorrectThresholdPercent);
+  const correctPercent = (correctCount / submittedAnswers.length) * 100;
 
-  const bestCount = Math.max(...counts.values());
-  const candidates = [...counts.entries()].filter(([, c]) => c === bestCount).map(([k]) => k);
-  if (candidates.length === 1) {
-    const key = candidates[0];
-    return { winnerKey: key, isCorrect: evaluateAnswer(question, key.split(",").filter(Boolean)), hasAnswer: true };
-  }
-
-  const correctCandidate = candidates.find(k => evaluateAnswer(question, k.split(",").filter(Boolean)));
-  if (correctCandidate) return { winnerKey: correctCandidate, isCorrect: true, hasAnswer: true };
-
-  const key = candidates.sort()[0];
-  return { winnerKey: key, isCorrect: false, hasAnswer: true };
+  return {
+    winnerKey: null,
+    isCorrect: correctPercent >= thresholdPercent,
+    hasAnswer: true
+  };
 }
 
 export async function createGame(models, { title, playerName, uiLanguage = "en" }) {

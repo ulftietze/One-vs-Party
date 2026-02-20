@@ -3,7 +3,7 @@
     <div :style="contentStyle">
       <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap;">
         <div>
-          <div data-no-i18n="1" style="font-size:32px; font-weight:900; color:#004e96;">{{ state.game?.title }}</div>
+          <div v-if="state.game?.showQuizTitle !== false" data-no-i18n="1" style="font-size:32px; font-weight:900; color:#004e96;">{{ state.game?.title }}</div>
         </div>
 
         <div style="display:flex; gap:10px; flex-wrap:wrap;">
@@ -239,9 +239,9 @@
 
             <div v-else-if="revealedQuestionType==='order'" class="order-reveal-grid">
               <div class="order-card order-card--correct">
-                <div class="order-card-title">Shown order (shuffled)</div>
+                <div class="order-card-title">{{ t("Correct order") }}</div>
                 <ol class="order-list">
-                  <li v-for="(item, idx) in maskedRevealOrder" :key="`mask-${item.id}-${idx}`" class="order-row"
+                  <li v-for="(item, idx) in correctRevealOrder" :key="`correct-${item.id}-${idx}`" class="order-row"
                       :style="{ animationDelay: `${Math.min(idx, 8) * 70}ms` }">
                     <span class="order-rank">{{ idx + 1 }}</span>
                     <div style="display:grid; gap:8px;">
@@ -333,12 +333,12 @@
       </div>
     </div>
 
-    <div style="border-left:4px solid #004e96; background:#f9f9f9; padding:18px; display:flex; flex-direction:column; gap:20px;">
-      <div v-if="state.game?.showScore || state.game?.status === 'finished'">
+    <transition name="sidebar-slide">
+      <div v-if="showSidebar" style="border-left:4px solid #004e96; background:#f9f9f9; padding:18px; display:flex; flex-direction:column; gap:20px; overflow:hidden;">
         <div style="font-size:22px; font-weight:900; margin-bottom:12px; color:#004e96;">Score</div>
         <ScoreBars :score="state.score || {player:0, guests:0}" :playerName="playerName" />
       </div>
-    </div>
+    </transition>
 
     <div v-if="fullscreenImageSrc" class="image-viewer" @click.self="closeFullscreenImage">
       <button @click="closeFullscreenImage" class="image-viewer-close">×</button>
@@ -374,15 +374,18 @@ const autoRevealPending = ref(false);
 const fullscreenImageSrc = ref("");
 let shareLoadedForGameId = null;
 
-const containerStyle = {
+const showSidebar = computed(() => state.value.game?.showScore !== false);
+
+const containerStyle = computed(() => ({
   display: "grid",
-  gridTemplateColumns: "1fr 320px",
+  gridTemplateColumns: showSidebar.value ? "minmax(0, 1fr) 320px" : "minmax(0, 1fr)",
   gap: "0",
   height: "100vh",
   boxSizing: "border-box",
   background: "#fff",
-  color: "#333"
-};
+  color: "#333",
+  transition: "grid-template-columns 220ms ease"
+}));
 
 const contentStyle = {
   padding: "30px",
@@ -507,14 +510,13 @@ const presentedOrderOptions = computed(() => {
   return shuffleNeverSame(base, Number(currentQuestion.value?.id || 1) + 101);
 });
 
-const maskedRevealOrder = computed(() => {
+const correctRevealOrder = computed(() => {
   if (String(revealedQuestionType.value || "") !== "order") return [];
-  const base = (currentQuestion.value?.options || []).map(o => ({
+  return (currentQuestion.value?.options || []).map(o => ({
     id: o.id,
     text: o.text || "",
     image: o.image || ""
   }));
-  return shuffleNeverSame(base, Number(currentQuestion.value?.id || 1) + 509);
 });
 
 const playerOrderRows = computed(() => {
@@ -853,6 +855,17 @@ async function next() {
 .show-bumper-enter-from,
 .show-bumper-leave-to {
   opacity: 0;
+}
+
+.sidebar-slide-enter-active,
+.sidebar-slide-leave-active {
+  transition: transform 220ms ease, opacity 220ms ease;
+}
+
+.sidebar-slide-enter-from,
+.sidebar-slide-leave-to {
+  opacity: 0;
+  transform: translateX(30px);
 }
 
 .phase-panel {
