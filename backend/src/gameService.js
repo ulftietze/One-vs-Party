@@ -244,7 +244,13 @@ export async function computeGuestVoteCounts(models, { gameId, question }) {
 
   const guests = await models.Participant.findAll({ where: { GameId: gameId, kind: "guest" } });
   if (!guests.length) {
-    return question.Options.map(o => ({ id: o.id, text: o.text, count: 0 }));
+    return question.Options.map(o => ({
+      id: o.id,
+      text: o.text,
+      image: o.image || "",
+      count: 0,
+      isCorrect: !!o.isCorrect
+    }));
   }
 
   const answers = await models.Answer.findAll({
@@ -262,6 +268,7 @@ export async function computeGuestVoteCounts(models, { gameId, question }) {
   return question.Options.map(o => ({
     id: o.id,
     text: o.text,
+    image: o.image || "",
     count: counts.get(String(o.id)) || 0,
     isCorrect: !!o.isCorrect
   }));

@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+  <defs>
+    <linearGradient id="bg2" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#e0f2fe"/>
+      <stop offset="100%" stop-color="#bfdbfe"/>
+    </linearGradient>
+    <linearGradient id="cup" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#e5e7eb"/>
+    </linearGradient>
+    <linearGradient id="coffee" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#7c2d12"/>
+      <stop offset="100%" stop-color="#451a03"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1280" height="720" fill="url(#bg2)"/>
+
+  <ellipse cx="640" cy="610" rx="360" ry="50" fill="#64748b" opacity="0.25"/>
+
+  <ellipse cx="640" cy="520" rx="260" ry="46" fill="#f8fafc"/>
+  <rect x="400" y="320" width="480" height="210" rx="48" fill="url(#cup)"/>
+  <ellipse cx="640" cy="320" rx="240" ry="44" fill="#f8fafc"/>
+  <ellipse cx="640" cy="328" rx="206" ry="34" fill="url(#coffee)"/>
+
+  <path d="M880 360 C950 350, 980 395, 960 440 C940 485, 890 484, 864 456" fill="none" stroke="#e5e7eb" stroke-width="34" stroke-linecap="round"/>
+  <path d="M877 362 C930 356, 955 395, 940 432 C925 468, 892 467, 873 447" fill="none" stroke="#cbd5e1" stroke-width="12" stroke-linecap="round"/>
+
+  <g stroke="#94a3b8" stroke-width="10" stroke-linecap="round" fill="none" opacity="0.9">
+    <path d="M550 250 C520 220, 560 205, 540 175"/>
+    <path d="M640 245 C610 215, 650 200, 630 165"/>
+    <path d="M730 250 C700 220, 740 205, 720 175"/>
+  </g>
+
+  <g>
+    <ellipse cx="480" cy="560" rx="26" ry="18" fill="#78350f"/>
+    <path d="M462 560 C472 548, 490 548, 500 560 C490 572, 472 572, 462 560 Z" fill="#a16207"/>
+    <ellipse cx="640" cy="575" rx="26" ry="18" fill="#78350f"/>
+    <path d="M622 575 C632 563, 650 563, 660 575 C650 587, 632 587, 622 575 Z" fill="#a16207"/>
+    <ellipse cx="800" cy="560" rx="26" ry="18" fill="#78350f"/>
+    <path d="M782 560 C792 548, 810 548, 820 560 C810 572, 792 572, 782 560 Z" fill="#a16207"/>
+  </g>
+</svg>

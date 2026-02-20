@@ -4,16 +4,16 @@
       {{ question.text }}
     </div>
 
-    <div v-if="isImageIdentity && question.promptImage" style="margin-bottom:12px; display:flex; justify-content:center;">
+    <div v-if="question.promptImage" style="margin-bottom:12px; display:flex; justify-content:center;">
       <img :src="question.promptImage" alt="Question image"
            @click="openImageViewer(question.promptImage)"
            class="zoomable-image"
            style="max-width:100%; max-height:360px; object-fit:contain; border:1px solid #ddd; border-radius:10px; background:#fff; padding:6px; cursor:zoom-in;" />
     </div>
-    <div v-if="isAudioIdentity && question.promptAudio" style="margin-bottom:12px;">
+    <div v-if="question.promptAudio" style="margin-bottom:12px;">
       <audio :src="question.promptAudio" controls preload="metadata" style="width:100%;"></audio>
     </div>
-    <div v-if="isVideoIdentity && question.promptVideo" style="margin-bottom:12px;">
+    <div v-if="question.promptVideo" style="margin-bottom:12px;">
       <video :src="question.promptVideo" controls preload="metadata"
              style="width:100%; max-height:320px; border:1px solid #ddd; border-radius:10px; background:#000;"></video>
     </div>
@@ -52,7 +52,13 @@
                   style="padding:4px 8px; border-radius:8px; border:1px solid #ddd; background:#fff; cursor:grab; touch-action:none;">
             ⇅
           </button>
-          <div data-no-i18n="1" style="flex:1; font-weight:700;">{{ entry.option.text }}</div>
+          <div style="flex:1; display:grid; gap:8px;">
+            <img v-if="entry.option.image" :src="entry.option.image" alt="Option image"
+                 @click.stop="openImageViewer(entry.option.image)"
+                 class="zoomable-image"
+                 style="max-width:120px; max-height:72px; object-fit:cover; border:1px solid #ddd; border-radius:8px; background:#fff;" />
+            <div data-no-i18n="1" style="font-weight:700;">{{ entry.option.text || "Option" }}</div>
+          </div>
           <button @click="moveOrder(entry.rank - 1, -1)" :disabled="disabled || entry.rank===1"
                   style="padding:4px 8px; border-radius:8px; border:1px solid #ddd; background:#fff;">
             ↑
@@ -77,7 +83,13 @@
              style="display:flex; gap:12px; align-items:center; padding:14px; min-height:60px; border:1px solid #ddd; border-radius:12px; cursor:pointer;"
              :style="multi.includes(String(o.id)) ? 'background:#f0f7ff; border-color:#004e96;' : ''">
         <input type="checkbox" :disabled="disabled" :value="String(o.id)" v-model="multi" style="width:20px; height:20px;" />
-        <span data-no-i18n="1" style="font-weight:700;">{{ o.text }}</span>
+        <div style="display:grid; gap:8px;">
+          <img v-if="o.image" :src="o.image" alt="Option image"
+               @click.prevent.stop="openImageViewer(o.image)"
+               class="zoomable-image"
+               style="max-width:140px; max-height:84px; object-fit:cover; border:1px solid #ddd; border-radius:8px; background:#fff;" />
+          <span data-no-i18n="1" style="font-weight:700;">{{ o.text || "Option" }}</span>
+        </div>
       </label>
       <div class="submit-sticky">
         <button :disabled="disabled || multi.length===0" @click="emit('submit', multi.map(String))"
@@ -94,7 +106,13 @@
               :style="single === String(o.id)
                 ? 'text-align:left; padding:16px; min-height:60px; border-radius:12px; border:2px solid #004e96; background:#f0f7ff; font-weight:700; font-size:17px; cursor:pointer;'
                 : 'text-align:left; padding:16px; min-height:60px; border-radius:12px; border:2px solid #ddd; background:#fff; font-weight:700; font-size:17px; cursor:pointer;'">
-        <span data-no-i18n="1">{{ o.text }}</span>
+        <div style="display:grid; gap:8px;">
+          <img v-if="o.image" :src="o.image" alt="Option image"
+               @click.stop.prevent="openImageViewer(o.image)"
+               class="zoomable-image"
+               style="max-width:180px; max-height:100px; object-fit:cover; border:1px solid #ddd; border-radius:8px; background:#fff;" />
+          <span data-no-i18n="1">{{ o.text || "Option" }}</span>
+        </div>
       </button>
     </div>
 
@@ -137,9 +155,6 @@ const imageViewerSrc = ref("");
 const type = computed(() => String(props.question?.type || "choice"));
 const isEstimate = computed(() => type.value === "estimate");
 const isOrder = computed(() => type.value === "order");
-const isImageIdentity = computed(() => type.value === "image_identity");
-const isAudioIdentity = computed(() => type.value === "audio_identity");
-const isVideoIdentity = computed(() => type.value === "video_identity");
 
 const optionMap = computed(() => {
   const map = new Map();

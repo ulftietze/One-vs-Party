@@ -30,6 +30,8 @@
 
       <!-- Antworttext unter dem Balken -->
       <div data-no-i18n="1" :style="{ position:'absolute', top:'100%', marginTop:'12px', fontSize: compact ? '11px' : '16px', fontWeight:800, textAlign:'center', width: compact ? '90px' : '140px', lineHeight:'1.2' }">
+        <img v-if="v.image" :src="v.image" alt="Option image"
+             :style="{ maxWidth: compact ? '66px' : '100px', maxHeight: compact ? '42px' : '64px', objectFit: 'cover', border: '1px solid #ddd', borderRadius: '8px', marginBottom: '6px', background: '#fff' }" />
         {{ v.text }}
       </div>
     </div>

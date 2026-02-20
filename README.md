@@ -55,13 +55,45 @@ docker compose up --build
 See `.env.example` for the main variables:
 - `FRONTEND_PORT`
 - `BACKEND_PORT`
+- `PUBLIC_BASE_URL`
 - `ADMIN_TOKEN`
 - `APP_SECRET`
+
+## Production behind host NGINX
+1. Create server config:
+```bash
+cp .env.example .env
+```
+
+2. Set at least these values in `.env`:
+- `APP_SECRET` (strong random value)
+- `ADMIN_TOKEN` (strong random value)
+- `PUBLIC_BASE_URL=https://quiz.example.com`
+
+3. Start containers (bound to localhost only):
+```bash
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+4. Install NGINX vhost:
+
+- Set the NGINX Proxy settings
+
+6. Issue certificates with Certbot (if missing):
+```bash
+sudo certbot --nginx -d quiz.example.com
+```
+
+7. Open:
+- `https://quiz.example.com`
+- `https://quiz.example.com/#/admin`
 
 ## Project Structure
 - `backend/`: API, game logic, DB models
 - `frontend/`: Vue app
 - `docker-compose.yml`: local multi-container stack
+- `docker-compose.prod.yml`: production compose for host NGINX reverse proxy
+- `deploy/nginx/quizduell.conf`: NGINX vhost template (TLS + API/media/socket proxy)
 
 ## E2E Test (short)
 Run Playwright in the dedicated e2e container:

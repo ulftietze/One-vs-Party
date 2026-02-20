@@ -393,7 +393,6 @@
             <option value="choice">Standard (Single/Multi)</option>
             <option value="estimate">Estimate question</option>
             <option value="order">Order question</option>
-            <option value="media_identity">Media question (image/audio/video)</option>
             <option value="risk">Risk question (+2 / -2)</option>
           </select>
         </div>
@@ -420,7 +419,7 @@
           <div v-if="showQuestionError('estimateTolerance')" class="field-error">{{ questionErrors.estimateTolerance }}</div>
         </div>
 
-        <div v-if="qType==='media_identity'" style="margin-top:12px; border:1px solid #eee; border-radius:12px; padding:12px; background:#fafafa; display:grid; gap:8px;">
+        <div style="margin-top:12px; border:1px solid #eee; border-radius:12px; padding:12px; background:#fafafa; display:grid; gap:8px;">
           <div style="font-weight:800;">Question media (image/audio/video)</div>
           <input v-model="promptMedia" @input="touchQuestionField('promptMedia'); onPromptMediaInput()" @blur="touchQuestionField('promptMedia')" placeholder="Media URL (or choose file below)"
                  :class="{ 'input-invalid': showQuestionError('promptMedia') }"
@@ -450,6 +449,15 @@
                    @blur="touchQuestionField('options')"
                    :class="{ 'input-invalid': showQuestionError('options') }"
                    style="flex:1; min-width:220px; padding:10px 12px; border-radius:12px; border:1px solid #ddd;" />
+            <input v-model="o.image" placeholder="Option image URL (optional)"
+                   @input="touchQuestionField('options'); onOptionImageInput(idx)"
+                   @blur="touchQuestionField('options')"
+                   style="flex:1; min-width:220px; padding:10px 12px; border-radius:12px; border:1px solid #ddd;" />
+            <input type="file" accept="image/*" @change="onOptionImageFile($event, idx)" />
+            <img v-if="o.image" :src="o.image" alt="Option image preview"
+                 @click="openFullscreenImage(o.image)"
+                 class="clickable-image"
+                 style="max-width:120px; max-height:72px; object-fit:cover; border:1px solid #ddd; border-radius:10px; background:#fff; padding:4px;" />
             <template v-if="qType==='order'">
               <button @pointerdown.prevent.stop="startOptionPointer($event, idx)"
                       style="padding:4px 8px; border-radius:8px; border:1px solid #ddd; background:#fff; cursor:grab; touch-action:none;">
@@ -602,10 +610,10 @@ const solutionImage = ref("");
 const solutionAudio = ref("");
 const solutionVideo = ref("");
 const options = ref([
-  { text: "", isCorrect: false },
-  { text: "", isCorrect: false },
-  { text: "", isCorrect: false },
-  { text: "", isCorrect: false }
+  { text: "", image: "", isCorrect: false },
+  { text: "", image: "", isCorrect: false },
+  { text: "", image: "", isCorrect: false },
+  { text: "", image: "", isCorrect: false }
 ]);
 
 const newBlockLabel = ref("");
@@ -701,25 +709,27 @@ const questionErrors = computed(() => {
     }
   }
 
-  if (qType.value === "media_identity") {
-    if (!String(promptMedia.value || "").trim()) {
-      errors.promptMedia = "Please provide a media URL or file.";
-    } else if (!["image", "audio", "video"].includes(String(promptMediaKind.value || ""))) {
-      errors.promptMedia = "Media must be image, audio or video.";
-    }
+  if (String(promptMedia.value || "").trim() && !["image", "audio", "video"].includes(String(promptMediaKind.value || ""))) {
+    errors.promptMedia = "Media must be image, audio or video.";
   }
 
   if (qType.value !== "estimate") {
     const normalizedOptions = (options.value || []).map(o => ({
       text: String(o?.text || "").trim(),
+      image: String(o?.image || "").trim(),
       isCorrect: !!o?.isCorrect
     }));
-    const nonEmptyOptions = normalizedOptions.filter(o => o.text.length > 0);
+    const nonEmptyOptions = normalizedOptions.filter(o => o.text.length > 0 || o.image.length > 0);
     if (nonEmptyOptions.length < 2) {
-      errors.options = "Please fill at least 2 answer options.";
+      errors.options = "Please fill at least 2 answer options (text or image).";
+    } else if (normalizedOptions.some(o => {
+      const medium = inferMediumFromRef(o.image);
+      return o.image && medium && medium !== "image";
+    })) {
+      errors.options = "Option images must be valid image URLs/uploads.";
     }
     if (qType.value !== "order") {
-      const correctCount = normalizedOptions.filter(o => o.text && o.isCorrect).length;
+      const correctCount = normalizedOptions.filter(o => (o.text || o.image) && o.isCorrect).length;
       if (allowMultiple.value) {
         if (correctCount < 1) errors.correctSelection = "Select at least one correct option.";
       } else if (correctCount !== 1) {
@@ -853,7 +863,7 @@ function inferMediumFromRef(raw) {
   if (value.startsWith("data:video/")) return "video";
 
   const clean = value.split("?")[0].split("#")[0];
-  if (/\.(png|jpe?g|webp|gif|bmp|avif|tiff?)$/.test(clean)) return "image";
+  if (/\.(png|jpe?g|webp|gif|bmp|avif|tiff?|svg)$/.test(clean)) return "image";
   if (/\.(mp3|m4a|aac|wav|ogg|oga|flac|opus)$/.test(clean)) return "audio";
   if (/\.(mp4|mov|m4v|webm|mkv|avi|mpeg|mpg|ogv)$/.test(clean)) return "video";
   return "";
@@ -1071,17 +1081,17 @@ function resetForm() {
   solutionAudio.value = "";
   solutionVideo.value = "";
   options.value = [
-    { text: "", isCorrect: false },
-    { text: "", isCorrect: false },
-    { text: "", isCorrect: false },
-    { text: "", isCorrect: false }
+    { text: "", image: "", isCorrect: false },
+    { text: "", image: "", isCorrect: false },
+    { text: "", image: "", isCorrect: false },
+    { text: "", image: "", isCorrect: false }
   ];
   editingId.value = null;
   resetQuestionFieldTouched();
 }
 
 function addOption() {
-  options.value.push({ text: "", isCorrect: false });
+  options.value.push({ text: "", image: "", isCorrect: false });
   touchQuestionField("options");
 }
 
@@ -1109,7 +1119,8 @@ async function saveQuestion() {
 
   const dataUrlRefs = [
     { key: "promptMedia", value: promptMedia.value },
-    { key: "solutionMedia", value: solutionMedia.value }
+    { key: "solutionMedia", value: solutionMedia.value },
+    ...options.value.map((o, idx) => ({ key: `optionImage${idx}`, value: o?.image }))
   ];
   if (dataUrlRefs.some(x => String(x.value || "").trim().startsWith("data:"))) {
     showToast("Please save media via file upload or URL, not as data URL.", "error");
@@ -1133,11 +1144,7 @@ async function saveQuestion() {
     setSolutionMedia(normalizedSolutionMedia, solutionMediaKind.value);
   }
 
-  if (qType.value === "media_identity") {
-    setPromptMedia(normalizedPromptMedia, promptMediaKind.value);
-  } else {
-    setPromptMedia("");
-  }
+  setPromptMedia(normalizedPromptMedia, promptMediaKind.value);
 
   const wasEdit = !!editingId.value;
   const payload = {
@@ -1145,7 +1152,7 @@ async function saveQuestion() {
     type: qType.value,
     blockLabel: qBlockLabel.value,
     allowMultiple: allowMultiple.value,
-    promptMedia: qType.value === "media_identity" ? promptMedia.value : "",
+    promptMedia: promptMedia.value,
     promptImage: promptImage.value,
     promptAudio: promptAudio.value,
     promptVideo: promptVideo.value,
@@ -1157,7 +1164,12 @@ async function saveQuestion() {
     solutionImage: solutionImage.value,
     solutionAudio: solutionAudio.value,
     solutionVideo: solutionVideo.value,
-    options: options.value.map((o, idx) => ({ text: o.text, isCorrect: o.isCorrect, orderIndex: idx }))
+    options: options.value.map((o, idx) => ({
+      text: o.text,
+      image: o.image || "",
+      isCorrect: o.isCorrect,
+      orderIndex: idx
+    }))
   };
   const { data } = await (editingId.value
     ? api.put(`/admin/${props.token}/questions/${editingId.value}`, payload)
@@ -1177,7 +1189,7 @@ function beginEdit(q) {
   editingId.value = q.id;
   qText.value = q.text || "";
   const rawType = String(q.type || "choice");
-  qType.value = ["image_identity", "audio_identity", "video_identity"].includes(rawType) ? "media_identity" : rawType;
+  qType.value = ["image_identity", "audio_identity", "video_identity", "media_identity"].includes(rawType) ? "choice" : rawType;
   qBlockLabel.value = normalizeBlockLabel(q.blockLabel);
   allowMultiple.value = !!q.allowMultiple;
   const promptMediaUrl = q.promptVideo || q.promptAudio || q.promptImage || "";
@@ -1198,10 +1210,10 @@ function beginEdit(q) {
   options.value = (q.Options || [])
     .slice()
     .sort((a, b) => Number(a.orderIndex || 0) - Number(b.orderIndex || 0) || Number(a.id || 0) - Number(b.id || 0))
-    .map(o => ({ text: o.text, isCorrect: !!o.isCorrect }));
+    .map(o => ({ text: o.text, image: o.image || "", isCorrect: !!o.isCorrect }));
   if (options.value.length < 2) {
-    options.value.push({ text: "", isCorrect: false });
-    options.value.push({ text: "", isCorrect: false });
+    options.value.push({ text: "", image: "", isCorrect: false });
+    options.value.push({ text: "", image: "", isCorrect: false });
   }
 }
 
@@ -1249,13 +1261,24 @@ function onSolutionMediaInput() {
   setSolutionMedia(solutionMedia.value);
 }
 
+function onOptionImageInput(index) {
+  const i = Number(index);
+  if (!Number.isFinite(i) || i < 0 || i >= options.value.length) return;
+  const value = String(options.value[i]?.image || "").trim();
+  if (!value) return;
+  const medium = inferMediumFromRef(value);
+  if (medium && medium !== "image") {
+    options.value[i].image = "";
+    showToast("Option image must be an image URL/file.", "error");
+  }
+}
+
 async function onPromptMediaFile(evt) {
   const file = evt?.target?.files?.[0];
   if (!file) return;
   try {
     const result = await uploadMediaFile(file, "prompt_media");
     setPromptMedia(result.url, result.medium);
-    qType.value = "media_identity";
     touchQuestionField("promptMedia");
   } catch (err) {
     showToast(questionErrorText(err?.message), "error");
@@ -1272,6 +1295,21 @@ async function onSolutionMediaFile(evt) {
     setSolutionMedia(result.url, result.medium);
     solutionType.value = solutionType.value === "text" ? "both" : "image";
     touchQuestionField("solutionMedia");
+  } catch (err) {
+    showToast(questionErrorText(err?.message), "error");
+  } finally {
+    if (evt?.target) evt.target.value = "";
+  }
+}
+
+async function onOptionImageFile(evt, index) {
+  const file = evt?.target?.files?.[0];
+  const i = Number(index);
+  if (!file || !Number.isFinite(i) || i < 0 || i >= options.value.length) return;
+  try {
+    const result = await uploadMediaFile(file, "option_image");
+    options.value[i].image = result.url;
+    touchQuestionField("options");
   } catch (err) {
     showToast(questionErrorText(err?.message), "error");
   } finally {

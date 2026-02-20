@@ -70,6 +70,7 @@ export function defineModels(sequelize) {
   const Option = sequelize.define("Option", {
     id: { type: DataTypes.INTEGER, autoIncrement: true, primaryKey: true },
     text: { type: DataTypes.STRING(500), allowNull: false },
+    image: { type: DataTypes.TEXT("long"), allowNull: false, defaultValue: "" },
     isCorrect: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
     orderIndex: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 }
   });
@@ -90,13 +91,14 @@ export function defineModels(sequelize) {
 
   const AdminSession = sequelize.define("AdminSession", {
     id: { type: DataTypes.INTEGER, autoIncrement: true, primaryKey: true },
-    tokenHash: { type: DataTypes.STRING(128), allowNull: false, unique: true },
+    tokenHash: { type: DataTypes.STRING(128), allowNull: false },
     expiresAt: { type: DataTypes.DATE, allowNull: false },
     revokedAt: { type: DataTypes.DATE, allowNull: true, defaultValue: null },
     lastSeenAt: { type: DataTypes.DATE, allowNull: true, defaultValue: null },
     createdFromIp: { type: DataTypes.STRING(80), allowNull: true, defaultValue: null }
   }, {
     indexes: [
+      { name: "uniq_admin_sessions_token_hash", unique: true, fields: ["tokenHash"] },
       { fields: ["expiresAt"] },
       { fields: ["revokedAt"] }
     ]

@@ -100,18 +100,18 @@
             Risk question: correct +2, wrong -2
           </div>
 
-          <div v-if="currentQuestion.type==='image_identity' && currentQuestion.promptImage"
+          <div v-if="currentQuestion.promptImage"
                style="margin-bottom:16px; display:flex; justify-content:center;">
             <img :src="currentQuestion.promptImage" alt="Question image"
                  @click="openFullscreenImage(currentQuestion.promptImage)"
                  class="clickable-image"
                  style="max-width:100%; max-height:300px; object-fit:contain; border:1px solid #ddd; border-radius:12px; padding:8px; background:#fff;" />
           </div>
-          <div v-if="currentQuestion.type==='audio_identity' && currentQuestion.promptAudio"
+          <div v-if="currentQuestion.promptAudio"
                style="margin-bottom:16px;">
             <audio :src="currentQuestion.promptAudio" controls preload="metadata" style="width:100%;"></audio>
           </div>
-          <div v-if="currentQuestion.type==='video_identity' && currentQuestion.promptVideo"
+          <div v-if="currentQuestion.promptVideo"
                style="margin-bottom:16px;">
             <video :src="currentQuestion.promptVideo" controls preload="metadata"
                    style="width:100%; max-height:360px; border:1px solid #ddd; border-radius:12px; background:#000;"></video>
@@ -124,10 +124,16 @@
 
           <div v-else-if="currentQuestion.type==='order'" style="display:grid; gap:12px;">
             <div style="font-size:14px; opacity:0.75;">Put these answers in the correct order:</div>
-            <div v-for="(o, optIdx) in currentQuestion.options" :key="o.id" class="question-option"
+            <div v-for="(o, optIdx) in presentedOrderOptions" :key="o.id" class="question-option"
                  :style="{ animationDelay: `${Math.min(optIdx, 8) * 70}ms` }"
                  style="padding:16px; border-radius:14px; border:2px solid #ddd; font-size:20px; font-weight:700; background:#fafafa;">
-              <span data-no-i18n="1">{{ o.text }}</span>
+              <div style="display:grid; gap:10px;">
+                <img v-if="o.image" :src="o.image" alt="Option image"
+                     class="clickable-image"
+                     @click="openFullscreenImage(o.image)"
+                     style="max-width:260px; max-height:140px; object-fit:cover; border:1px solid #ddd; border-radius:10px; background:#fff;" />
+                <span data-no-i18n="1">{{ o.text || "Option" }}</span>
+              </div>
             </div>
           </div>
 
@@ -135,7 +141,13 @@
             <div v-for="(o, optIdx) in currentQuestion.options" :key="o.id" class="question-option"
                  :style="{ animationDelay: `${Math.min(optIdx, 8) * 70}ms` }"
                  style="padding:16px; border-radius:14px; border:2px solid #ddd; font-size:20px; font-weight:700; background:#fafafa;">
-              <span data-no-i18n="1">{{ o.text }}</span>
+              <div style="display:grid; gap:10px;">
+                <img v-if="o.image" :src="o.image" alt="Option image"
+                     class="clickable-image"
+                     @click="openFullscreenImage(o.image)"
+                     style="max-width:260px; max-height:140px; object-fit:cover; border:1px solid #ddd; border-radius:10px; background:#fff;" />
+                <span data-no-i18n="1">{{ o.text || "Option" }}</span>
+              </div>
             </div>
           </div>
 
@@ -227,12 +239,18 @@
 
             <div v-else-if="revealedQuestionType==='order'" class="order-reveal-grid">
               <div class="order-card order-card--correct">
-                <div class="order-card-title">Correct order</div>
+                <div class="order-card-title">Shown order (shuffled)</div>
                 <ol class="order-list">
-                  <li v-for="(item, idx) in revealedCorrectOrder" :key="item.id" class="order-row"
+                  <li v-for="(item, idx) in maskedRevealOrder" :key="`mask-${item.id}-${idx}`" class="order-row"
                       :style="{ animationDelay: `${Math.min(idx, 8) * 70}ms` }">
                     <span class="order-rank">{{ idx + 1 }}</span>
-                    <span data-no-i18n="1" class="order-text">{{ item.text }}</span>
+                    <div style="display:grid; gap:8px;">
+                      <img v-if="item.image" :src="item.image" alt="Option image"
+                           class="clickable-image"
+                           @click="openFullscreenImage(item.image)"
+                           style="max-width:140px; max-height:80px; object-fit:cover; border:1px solid #ddd; border-radius:8px; background:#fff;" />
+                      <span data-no-i18n="1" class="order-text">{{ item.text || "Option" }}</span>
+                    </div>
                   </li>
                 </ol>
               </div>
@@ -240,15 +258,18 @@
               <div v-if="playerOrderRows.length" class="order-card order-card--player">
                 <div class="order-card-head">
                   <div class="order-card-title">Answer {{ playerName }}</div>
-                  <div class="order-score">{{ playerOrderCorrectCount }} / {{ revealedCorrectOrder.length }} correct</div>
                 </div>
                 <ol class="order-list">
                   <li v-for="(row, idx) in playerOrderRows" :key="`${row.id}-${idx}`" class="order-row order-row--player"
-                      :class="row.matches ? 'is-match' : 'is-miss'"
                       :style="{ animationDelay: `${120 + Math.min(idx, 8) * 70}ms` }">
                     <span class="order-rank">{{ idx + 1 }}</span>
-                    <span data-no-i18n="1" class="order-text">{{ row.text }}</span>
-                    <span class="order-status">{{ row.matches ? "✓" : "✕" }}</span>
+                    <div style="display:grid; gap:8px;">
+                      <img v-if="row.image" :src="row.image" alt="Option image"
+                           class="clickable-image"
+                           @click="openFullscreenImage(row.image)"
+                           style="max-width:140px; max-height:80px; object-fit:cover; border:1px solid #ddd; border-radius:8px; background:#fff;" />
+                      <span data-no-i18n="1" class="order-text">{{ row.text || "Option" }}</span>
+                    </div>
                   </li>
                 </ol>
               </div>
@@ -280,16 +301,32 @@
             </div>
 
             <template v-if="showVoteChart">
-              <button @click="chartOpen = !chartOpen"
-                      style="position:absolute; right:0; bottom:0; padding:8px 12px; border-radius:12px; border:1px solid #ddd; background:rgba(255,255,255,0.96); color:#004e96; font-weight:900; cursor:pointer; display:flex; gap:8px; align-items:center;">
-                <span>Statistik</span>
-                <span style="font-size:14px; line-height:1;">{{ chartOpen ? "▼" : "▲" }}</span>
-              </button>
-
-              <div :style="chartPanelStyle">
-                <div style="font-size:12px; font-weight:900; text-transform:uppercase; color:#004e96; letter-spacing:0.05em;">Answer stats</div>
-                <GuestVoteBars :votes="guestVotes" :playerAnswer="revealedPlayerAnswer" :player-label="playerName" :compact="true" />
+              <div v-if="showLargeVoteChart"
+                   class="reveal-card"
+                   style="padding:16px; border-radius:14px; border:2px solid #004e96; background:#f0f7ff;">
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
+                  <div style="font-size:14px; font-weight:900; text-transform:uppercase; color:#004e96; letter-spacing:0.05em;">
+                    Answer stats
+                  </div>
+                  <div style="font-size:14px; font-weight:700; color:#1f2937;">
+                    No solution configured for this question.
+                  </div>
+                </div>
+                <GuestVoteBars :votes="guestVotes" :playerAnswer="revealedPlayerAnswer" :player-label="playerName" :compact="false" />
               </div>
+
+              <template v-else>
+                <button @click="chartOpen = !chartOpen"
+                        style="position:absolute; right:0; bottom:0; padding:8px 12px; border-radius:12px; border:1px solid #ddd; background:rgba(255,255,255,0.96); color:#004e96; font-weight:900; cursor:pointer; display:flex; gap:8px; align-items:center;">
+                  <span>Statistik</span>
+                  <span style="font-size:14px; line-height:1;">{{ chartOpen ? "▼" : "▲" }}</span>
+                </button>
+
+                <div :style="chartPanelStyle">
+                  <div style="font-size:12px; font-weight:900; text-transform:uppercase; color:#004e96; letter-spacing:0.05em;">Answer stats</div>
+                  <GuestVoteBars :votes="guestVotes" :playerAnswer="revealedPlayerAnswer" :player-label="playerName" :compact="true" />
+                </div>
+              </template>
             </template>
           </div>
         </div>
@@ -328,7 +365,6 @@ const guestVotes = ref([]);
 const revealedPlayerAnswer = ref([]);
 const revealedSolution = ref({ type: "none", text: "", image: "", audio: "", video: "" });
 const revealedQuestionType = ref("choice");
-const revealedCorrectOrder = ref([]);
 const revealedEstimate = ref(null);
 const shareLink = ref("");
 const shareImageUrl = ref("");
@@ -430,19 +466,65 @@ const winnerText = computed(() => {
 });
 
 const topRankings = computed(() => (state.value.score?.rankings || []).slice(0, 3));
-const optionTextById = computed(() => {
-  return new Map((currentQuestion.value?.options || []).map(o => [String(o.id), o.text]));
+const optionById = computed(() => {
+  return new Map((currentQuestion.value?.options || []).map(o => [String(o.id), {
+    text: o.text || `#${o.id}`,
+    image: o.image || ""
+  }]));
 });
+
+function seededRandom(seed) {
+  let t = Number(seed || 1) + 0x6D2B79F5;
+  return () => {
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function shuffleNeverSame(items, seed = 1) {
+  const list = Array.isArray(items) ? [...items] : [];
+  if (list.length <= 1) return list;
+  const rnd = seededRandom(seed);
+  for (let i = list.length - 1; i > 0; i--) {
+    const j = Math.floor(rnd() * (i + 1));
+    [list[i], list[j]] = [list[j], list[i]];
+  }
+  const unchanged = list.every((item, idx) => String(item?.id || "") === String(items[idx]?.id || ""));
+  if (unchanged) {
+    [list[0], list[1]] = [list[1], list[0]];
+  }
+  return list;
+}
+
+const presentedOrderOptions = computed(() => {
+  if (String(currentQuestion.value?.type || "") !== "order") return currentQuestion.value?.options || [];
+  const base = (currentQuestion.value?.options || []).map(o => ({
+    id: o.id,
+    text: o.text || "",
+    image: o.image || ""
+  }));
+  return shuffleNeverSame(base, Number(currentQuestion.value?.id || 1) + 101);
+});
+
+const maskedRevealOrder = computed(() => {
+  if (String(revealedQuestionType.value || "") !== "order") return [];
+  const base = (currentQuestion.value?.options || []).map(o => ({
+    id: o.id,
+    text: o.text || "",
+    image: o.image || ""
+  }));
+  return shuffleNeverSame(base, Number(currentQuestion.value?.id || 1) + 509);
+});
+
 const playerOrderRows = computed(() => {
   if (!revealedPlayerAnswer.value.length) return [];
-  const correctByPosition = revealedCorrectOrder.value.map(item => String(item.id));
   return revealedPlayerAnswer.value.map((id, idx) => ({
     id: String(id),
-    text: optionTextById.value.get(String(id)) || `#${id}`,
-    matches: String(correctByPosition[idx] || "") === String(id)
+    text: optionById.value.get(String(id))?.text || `#${id}`,
+    image: optionById.value.get(String(id))?.image || ""
   }));
 });
-const playerOrderCorrectCount = computed(() => playerOrderRows.value.filter(r => r.matches).length);
 const estimateScale = computed(() => {
   const estimate = revealedEstimate.value;
   if (!estimate) return null;
@@ -485,6 +567,11 @@ const estimateScale = computed(() => {
 const showVoteChart = computed(() => {
   return !["estimate", "order"].includes(String(revealedQuestionType.value || "")) && guestVotes.value.length > 0;
 });
+const hasRevealedSolution = computed(() => {
+  const s = revealedSolution.value || {};
+  return !!(String(s.text || "").trim() || s.image || s.audio || s.video);
+});
+const showLargeVoteChart = computed(() => showVoteChart.value && !hasRevealedSolution.value);
 
 const chartOpen = ref(true);
 const chartPanelStyle = computed(() => ({
@@ -558,7 +645,6 @@ onMounted(async () => {
       revealedPlayerAnswer.value = [];
       revealedSolution.value = { type: "none", text: "", image: "", audio: "", video: "" };
       revealedQuestionType.value = String(currentQuestion.value?.type || "choice");
-      revealedCorrectOrder.value = [];
       revealedEstimate.value = null;
       if (!autoRevealPending.value) showIntermission.value = false;
     } else if (s.game?.phase === "revealed") {
@@ -570,7 +656,7 @@ onMounted(async () => {
     if (s.game?.status !== "live") clearIntermission();
   });
 
-  socket.on("reveal", ({ guestVotes: gv, playerAnswer, solution, questionType, correctOrder, estimate }) => {
+  socket.on("reveal", ({ guestVotes: gv, playerAnswer, solution, questionType, estimate }) => {
     revealedPlayerAnswer.value = (playerAnswer || []).map(String);
     revealedSolution.value = {
       type: solution?.type || "none",
@@ -580,11 +666,11 @@ onMounted(async () => {
       video: solution?.video || ""
     };
     revealedQuestionType.value = String(questionType || currentQuestion.value?.type || "choice");
-    revealedCorrectOrder.value = (correctOrder || []).map(x => ({ id: x.id, text: x.text }));
     revealedEstimate.value = estimate || null;
     guestVotes.value = (gv || []).map(v => ({
       id: v.id,
       text: v.text,
+      image: v.image || "",
       count: Number(v.count || 0),
       isCorrect: !!v.isCorrect
     }));

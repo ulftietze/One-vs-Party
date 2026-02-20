@@ -61,16 +61,28 @@ process.on("unhandledRejection", (reason) => {
 const sequelize = makeSequelize();
 const models = defineModels(sequelize);
 
-async function cleanupDuplicateLinkTokenIndexes() {
+function quotedSqlIdent(name) {
+  return `\`${String(name || "").replace(/`/g, "``")}\``;
+}
+
+async function cleanupDuplicateUniqueIndexes({ tableName, columnName, targetIndexName }) {
   try {
+    const safeTable = String(tableName || "");
+    const safeColumn = String(columnName || "");
+    const safeTargetIndex = String(targetIndexName || "");
+    if (!safeTable || !safeColumn || !safeTargetIndex) return;
+
     const tableRows = await sequelize.query(
       `
       SELECT COUNT(*) AS tableCount
       FROM information_schema.TABLES
       WHERE TABLE_SCHEMA = DATABASE()
-        AND TABLE_NAME = 'Links'
+        AND TABLE_NAME = :tableName
       `,
-      { type: QueryTypes.SELECT }
+      {
+        type: QueryTypes.SELECT,
+        replacements: { tableName: safeTable }
+      }
     );
     const tableCount = Number(tableRows?.[0]?.tableCount || 0);
     if (!tableCount) return;
@@ -80,32 +92,50 @@ async function cleanupDuplicateLinkTokenIndexes() {
       SELECT DISTINCT INDEX_NAME AS indexName
       FROM information_schema.STATISTICS
       WHERE TABLE_SCHEMA = DATABASE()
-        AND TABLE_NAME = 'Links'
-        AND COLUMN_NAME = 'token'
+        AND TABLE_NAME = :tableName
+        AND COLUMN_NAME = :columnName
         AND NON_UNIQUE = 0
       `,
-      { type: QueryTypes.SELECT }
+      {
+        type: QueryTypes.SELECT,
+        replacements: {
+          tableName: safeTable,
+          columnName: safeColumn
+        }
+      }
     );
 
     const keyNames = [...new Set((indexRows || []).map(r => String(r.indexName || "").trim()).filter(Boolean))];
     for (const keyName of keyNames) {
       if (keyName === "PRIMARY") continue;
-      await sequelize.query(`ALTER TABLE \`Links\` DROP INDEX \`${keyName}\`;`);
+      await sequelize.query(`ALTER TABLE ${quotedSqlIdent(safeTable)} DROP INDEX ${quotedSqlIdent(keyName)};`);
     }
 
-    await sequelize.query("ALTER TABLE `Links` ADD UNIQUE INDEX `uniq_links_token` (`token`);");
+    await sequelize.query(
+      `ALTER TABLE ${quotedSqlIdent(safeTable)} ADD UNIQUE INDEX ${quotedSqlIdent(safeTargetIndex)} (${quotedSqlIdent(safeColumn)});`
+    );
   } catch (err) {
-    console.warn("cleanupDuplicateLinkTokenIndexes skipped:", err?.message || err);
+    console.warn(`cleanupDuplicateUniqueIndexes skipped for ${tableName}.${columnName}:`, err?.message || err);
   }
 }
 
 await sequelize.authenticate();
-await cleanupDuplicateLinkTokenIndexes();
+await cleanupDuplicateUniqueIndexes({
+  tableName: "Links",
+  columnName: "token",
+  targetIndexName: "uniq_links_token"
+});
+await cleanupDuplicateUniqueIndexes({
+  tableName: "AdminSessions",
+  columnName: "tokenHash",
+  targetIndexName: "uniq_admin_sessions_token_hash"
+});
 // Für dieses Projekt ist "alter" praktisch, damit neue Spalten (z.B. isPublished) automatisch entstehen.
 await sequelize.sync({ alter: true });
 await fsp.mkdir(MEDIA_ROOT, { recursive: true });
 await fsp.mkdir(MEDIA_TMP_ROOT, { recursive: true });
 await fsp.mkdir(QUESTION_PACKAGES_ROOT, { recursive: true });
+await seedBuiltinMediaAssets();
 await preloadTranslations();
 
 const app = express();
@@ -137,6 +167,14 @@ const uploadMedia = multer({
   limits: uploadLimits
 });
 const autoRevealTimers = new Map();
+const BUILTIN_BIRTHDAY_MEDIA = Object.freeze({
+  cakeImage: "/media/builtin/geburtstag/torte_30.svg",
+  drinkImage: "/media/builtin/geburtstag/getraenk_kaffee.svg",
+  signalAudio: "/media/builtin/geburtstag/signalton.mp3",
+  applauseAudio: "/media/builtin/geburtstag/applaus.mp3",
+  birthdayVideo: "/media/builtin/geburtstag/happy_birthday.mp4",
+  confettiVideo: "/media/builtin/geburtstag/konfetti.mp4"
+});
 
 function normalizeAutoRevealDelaySeconds(raw) {
   const parsed = Number(raw);
@@ -153,14 +191,16 @@ const BUILTIN_QUESTION_PACKAGES = [
   {
     id: "builtin:geburtstag",
     name: "Geburtstag",
-    description: "Leichtes Party-Set mit Fokus auf Person, Hobbys und kleine Schätzfragen.",
+    description: "Party-Set mit Choice, Risiko, Reihenfolge, Schätzung und lokalen Medien-Demos (Bild/Audio/Video).",
     kind: "builtin",
     questions: [
       {
-        text: "Welches Getränk bestellt die Hauptperson am häufigsten?",
+        text: "Welches Lieblingsgetraenk passt zur Geburtstagsrunde?",
         type: "choice",
         allowMultiple: false,
         blockLabel: "Getraenke",
+        solutionText: "Im Loesungsbild steht das Lieblingsgetraenk auf Kaffee.",
+        solutionImage: BUILTIN_BIRTHDAY_MEDIA.drinkImage,
         options: [
           { text: "Kaffee", isCorrect: true, orderIndex: 0 },
           { text: "Tee", isCorrect: false, orderIndex: 1 },
@@ -169,33 +209,94 @@ const BUILTIN_QUESTION_PACKAGES = [
         ]
       },
       {
-        text: "Wie viele Kerzen standen beim 30. Geburtstag auf der Torte?",
+        text: "Wie viele Kerzen stehen auf der Geburtstagstorte?",
         type: "estimate",
         blockLabel: "Geburtstage",
         estimateTarget: 30,
         estimateTolerance: 2,
+        solutionText: "Das Loesungsbild zeigt eine Torte mit 30 Kerzen.",
+        solutionImage: BUILTIN_BIRTHDAY_MEDIA.cakeImage,
         options: []
       },
       {
-        text: "Welche Aussage passt am besten?",
+        text: "Risk: Wann passt der Applaus-Sound am besten?",
         type: "risk",
         allowMultiple: false,
         blockLabel: "Fun Facts",
+        solutionText: "Der Applaus markiert den Moment nach dem Kerzen-Ausblasen.",
+        solutionAudio: BUILTIN_BIRTHDAY_MEDIA.applauseAudio,
         options: [
-          { text: "Kann beim ersten Wecker aufstehen", isCorrect: false, orderIndex: 0 },
-          { text: "Kommt fast immer 5 Minuten zu spaet", isCorrect: true, orderIndex: 1 },
-          { text: "Hat kein Lieblingsessen", isCorrect: false, orderIndex: 2 }
+          { text: "Nach dem Kerzen-Ausblasen", isCorrect: true, orderIndex: 0 },
+          { text: "Beim Tischdecken", isCorrect: false, orderIndex: 1 },
+          { text: "Beim Schuhe ausziehen", isCorrect: false, orderIndex: 2 }
         ]
       },
       {
-        text: "Bringe die Lebensphasen in die richtige Reihenfolge.",
+        text: "Sortiere den typischen Ablauf der Feier.",
         type: "order",
-        blockLabel: "Lebenslauf",
+        blockLabel: "Ablauf",
+        solutionText: "Der Video-Loop zeigt den zentralen Geburtstagsmoment als Aufloesung.",
+        solutionVideo: BUILTIN_BIRTHDAY_MEDIA.birthdayVideo,
         options: [
-          { text: "Schulabschluss", orderIndex: 0 },
-          { text: "Erster Job", orderIndex: 1 },
-          { text: "Erste eigene Wohnung", orderIndex: 2 },
-          { text: "Heutige Feier", orderIndex: 3 }
+          { text: "Gaeste kommen an", orderIndex: 0 },
+          { text: "Kerzen ausblasen", orderIndex: 1 },
+          { text: "Torte anschneiden", orderIndex: 2 },
+          { text: "Spiele & Musik", orderIndex: 3 }
+        ]
+      },
+      {
+        text: "Bildfrage: Was ist auf dem Bild zu sehen?",
+        type: "image_identity",
+        allowMultiple: false,
+        blockLabel: "Medien-Demo",
+        promptImage: BUILTIN_BIRTHDAY_MEDIA.cakeImage,
+        solutionText: "Das Bild zeigt die Geburtstagstorte mit 30 Kerzen.",
+        solutionAudio: BUILTIN_BIRTHDAY_MEDIA.applauseAudio,
+        options: [
+          { text: "Eine Geburtstagstorte mit 30 Kerzen", isCorrect: true, orderIndex: 0 },
+          { text: "Eine Kaffeetasse", isCorrect: false, orderIndex: 1 },
+          { text: "Ein Geschenkkarton", isCorrect: false, orderIndex: 2 }
+        ]
+      },
+      {
+        text: "Audiofrage: Welches Geraeusch hoerst du?",
+        type: "audio_identity",
+        allowMultiple: false,
+        blockLabel: "Medien-Demo",
+        promptAudio: BUILTIN_BIRTHDAY_MEDIA.signalAudio,
+        solutionText: "Zu hoeren ist ein kurzer hoher Signalton.",
+        solutionVideo: BUILTIN_BIRTHDAY_MEDIA.birthdayVideo,
+        options: [
+          { text: "Ein kurzer Signalton", isCorrect: true, orderIndex: 0 },
+          { text: "Applaus", isCorrect: false, orderIndex: 1 },
+          { text: "Ein langer Trommelwirbel", isCorrect: false, orderIndex: 2 }
+        ]
+      },
+      {
+        text: "Videofrage: Was zeigt der Clip?",
+        type: "video_identity",
+        allowMultiple: false,
+        blockLabel: "Medien-Demo",
+        promptVideo: BUILTIN_BIRTHDAY_MEDIA.confettiVideo,
+        solutionText: "Der Clip zeigt einen Konfetti-Demo-Loop mit Testbild-Hintergrund.",
+        solutionImage: BUILTIN_BIRTHDAY_MEDIA.cakeImage,
+        options: [
+          { text: "Einen Konfetti-Demo-Loop", isCorrect: true, orderIndex: 0 },
+          { text: "Eine Person beim Kerzen-Ausblasen", isCorrect: false, orderIndex: 1 },
+          { text: "Eine Dia-Show mit Fotos", isCorrect: false, orderIndex: 2 }
+        ]
+      },
+      {
+        text: "Welche Deko passt am besten zu einer lockeren Geburtstagsparty?",
+        type: "choice",
+        allowMultiple: false,
+        blockLabel: "Motto",
+        solutionText: "Bunte Ballons und Lichterkette passen zum gezeigten Party-Stil.",
+        solutionVideo: BUILTIN_BIRTHDAY_MEDIA.confettiVideo,
+        options: [
+          { text: "Bunte Ballons und Lichterkette", isCorrect: true, orderIndex: 0 },
+          { text: "Nur schwarze Tischdecken", isCorrect: false, orderIndex: 1 },
+          { text: "Keine Dekoration", isCorrect: false, orderIndex: 2 }
         ]
       }
     ]
@@ -355,6 +456,26 @@ function runFfmpeg(args) {
   });
 }
 
+async function seedBuiltinMediaAssets() {
+  const bundledMediaRoot = path.resolve(process.cwd(), "src", "builtin-media");
+  try {
+    await fsp.access(bundledMediaRoot);
+  } catch {
+    return;
+  }
+  try {
+    const targetRoot = path.join(MEDIA_ROOT, "builtin");
+    await fsp.mkdir(targetRoot, { recursive: true });
+    await fsp.cp(bundledMediaRoot, targetRoot, {
+      recursive: true,
+      force: false,
+      errorOnExist: false
+    });
+  } catch (err) {
+    logCompactError("seed builtin media failed", err);
+  }
+}
+
 function mediaKindConfig(rawKind) {
   const kind = String(rawKind || "").trim().toLowerCase();
   const map = {
@@ -365,7 +486,8 @@ function mediaKindConfig(rawKind) {
     solution_image: { group: "solution", medium: "image" },
     solution_audio: { group: "solution", medium: "audio" },
     solution_video: { group: "solution", medium: "video" },
-    solution_media: { group: "solution", medium: "any" }
+    solution_media: { group: "solution", medium: "any" },
+    option_image: { group: "option", medium: "image" }
   };
   return map[kind] ? { kind, ...map[kind] } : null;
 }
@@ -382,7 +504,7 @@ function mimeMatchesMedium(mime, medium) {
 function filenameLooksLikeMedium(filename, medium) {
   const ext = String(path.extname(String(filename || "")).toLowerCase());
   if (!ext) return false;
-  const imageExt = new Set([".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".tif", ".tiff", ".avif"]);
+  const imageExt = new Set([".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".tif", ".tiff", ".avif", ".svg"]);
   const audioExt = new Set([".mp3", ".m4a", ".aac", ".wav", ".ogg", ".oga", ".flac", ".opus"]);
   const videoExt = new Set([".mp4", ".mov", ".m4v", ".webm", ".mkv", ".avi", ".mpeg", ".mpg", ".ogv"]);
   if (medium === "image") return imageExt.has(ext);
@@ -529,7 +651,8 @@ function questionMediaRefs(q) {
     q?.promptVideo,
     q?.solutionImage,
     q?.solutionAudio,
-    q?.solutionVideo
+    q?.solutionVideo,
+    ...(Array.isArray(q?.Options) ? q.Options.map(o => o?.image) : [])
   ].map(x => String(x || "").trim()).filter(Boolean);
   return refs.filter(ref => ref.startsWith("/media/"));
 }
@@ -542,7 +665,8 @@ async function cleanupOrphanMediaForGame(gameId) {
   const keep = new Set();
   const questions = await models.Question.findAll({
     where: { GameId: id },
-    attributes: ["promptImage", "promptAudio", "promptVideo", "solutionImage", "solutionAudio", "solutionVideo"]
+    attributes: ["promptImage", "promptAudio", "promptVideo", "solutionImage", "solutionAudio", "solutionVideo"],
+    include: [{ model: models.Option, attributes: ["image"] }]
   });
   for (const q of questions) {
     for (const ref of questionMediaRefs(q)) keep.add(ref);
@@ -743,6 +867,7 @@ function mimeFromFilename(filename) {
     ".png": "image/png",
     ".jpg": "image/jpeg",
     ".jpeg": "image/jpeg",
+    ".svg": "image/svg+xml",
     ".gif": "image/gif",
     ".bmp": "image/bmp",
     ".avif": "image/avif",
@@ -851,8 +976,17 @@ async function maybeImportDataUrlMedia(rawRef, { gameId, kind }) {
 
 async function normalizeImportedQuestionMedia(rawQuestion, gameId) {
   const source = rawQuestion || {};
+  const sourceOptions = Array.isArray(source.options) ? source.options : [];
+  const options = [];
+  for (const item of sourceOptions) {
+    options.push({
+      ...(item || {}),
+      image: await maybeImportDataUrlMedia(item?.image, { gameId, kind: "option_image" })
+    });
+  }
   return {
     ...source,
+    options,
     promptMedia: await maybeImportDataUrlMedia(source.promptMedia, { gameId, kind: "prompt_media" }),
     promptImage: await maybeImportDataUrlMedia(source.promptImage, { gameId, kind: "prompt_image" }),
     promptAudio: await maybeImportDataUrlMedia(source.promptAudio, { gameId, kind: "prompt_audio" }),
@@ -888,6 +1022,15 @@ async function questionToPackageQuestion(q) {
   const solutionImage = await mediaRefToEmbeddedDataUrl(q.solutionImage || "");
   const solutionAudio = await mediaRefToEmbeddedDataUrl(q.solutionAudio || "");
   const solutionVideo = await mediaRefToEmbeddedDataUrl(q.solutionVideo || "");
+  const options = [];
+  for (const [idx, o] of sortedOptions(q).entries()) {
+    options.push({
+      text: String(o.text || ""),
+      image: await mediaRefToEmbeddedDataUrl(o.image || ""),
+      isCorrect: !!o.isCorrect,
+      orderIndex: Number.isFinite(Number(o.orderIndex)) ? Number(o.orderIndex) : idx
+    });
+  }
   return {
     text: String(q.text || ""),
     type: normalizeQuestionType(q.type),
@@ -905,11 +1048,7 @@ async function questionToPackageQuestion(q) {
     solutionImage,
     solutionAudio,
     solutionVideo,
-    options: sortedOptions(q).map((o, idx) => ({
-      text: String(o.text || ""),
-      isCorrect: !!o.isCorrect,
-      orderIndex: Number.isFinite(Number(o.orderIndex)) ? Number(o.orderIndex) : idx
-    }))
+    options
   };
 }
 
@@ -920,6 +1059,15 @@ async function normalizedPayloadToPackageQuestion(q) {
   const solutionImage = await mediaRefToEmbeddedDataUrl(q.solutionImage || "");
   const solutionAudio = await mediaRefToEmbeddedDataUrl(q.solutionAudio || "");
   const solutionVideo = await mediaRefToEmbeddedDataUrl(q.solutionVideo || "");
+  const options = [];
+  for (const [idx, o] of (Array.isArray(q.options) ? q.options : []).entries()) {
+    options.push({
+      text: String(o.text || ""),
+      image: await mediaRefToEmbeddedDataUrl(o.image || ""),
+      isCorrect: !!o.isCorrect,
+      orderIndex: Number.isFinite(Number(o.orderIndex)) ? Number(o.orderIndex) : idx
+    });
+  }
   return {
     text: String(q.text || ""),
     type: normalizeQuestionType(q.type),
@@ -937,11 +1085,7 @@ async function normalizedPayloadToPackageQuestion(q) {
     solutionImage,
     solutionAudio,
     solutionVideo,
-    options: (Array.isArray(q.options) ? q.options : []).map((o, idx) => ({
-      text: String(o.text || ""),
-      isCorrect: !!o.isCorrect,
-      orderIndex: Number.isFinite(Number(o.orderIndex)) ? Number(o.orderIndex) : idx
-    }))
+    options
   };
 }
 
@@ -1279,6 +1423,7 @@ async function insertQuestionsIntoGame(gameId, normalizedQuestions, { mode = "re
       await models.Option.create({
         QuestionId: created.id,
         text: opt.text,
+        image: opt.image || "",
         isCorrect: !!opt.isCorrect,
         orderIndex: Number(opt.orderIndex || 0)
       });
@@ -1498,7 +1643,7 @@ function mapQuestionForSocket(question) {
     promptVideo: String(question.promptVideo || ""),
     estimateTolerance: Number(question.estimateTolerance || 0),
     solutionType: question.solutionType || "none",
-    options: sortedOptions(question).map(o => ({ id: o.id, text: o.text }))
+    options: sortedOptions(question).map(o => ({ id: o.id, text: o.text, image: String(o.image || "") }))
   };
 }
 
@@ -1949,10 +2094,11 @@ async function normalizeQuestionPayload(raw = {}) {
   const options = optionsRaw
     .map((o, idx) => ({
       text: String(o?.text || "").trim().slice(0, 500),
+      image: normalizeMediaUrlRef(o?.image, { allowImageDataUrl: true }),
       isCorrect: !!o?.isCorrect,
       orderIndex: Number.isFinite(Number(o?.orderIndex)) ? Number(o.orderIndex) : idx
     }))
-    .filter(o => !!o.text);
+    .filter(o => !!o.text || !!o.image);
 
   const normalizedOptions = type === "order"
     ? options.map((o, idx) => ({ ...o, isCorrect: false, orderIndex: idx }))
@@ -1965,9 +2111,9 @@ async function normalizeQuestionPayload(raw = {}) {
     type,
     allowMultiple,
     blockLabel: normalizeBlockLabel(raw.blockLabel),
-    promptImage: type === "image_identity" ? promptImage : "",
-    promptAudio: type === "audio_identity" ? promptAudio : "",
-    promptVideo: type === "video_identity" ? promptVideo : "",
+    promptImage,
+    promptAudio,
+    promptVideo,
     estimateTarget,
     estimateTolerance,
     options: normalizedOptions,
@@ -2555,6 +2701,7 @@ app.post("/api/admin/:token/questions", requireToken, async (req, res) => {
       await models.Option.create({
         QuestionId: q.id,
         text: opt.text,
+        image: opt.image || "",
         isCorrect: !!opt.isCorrect,
         orderIndex: Number(opt.orderIndex || 0)
       });
@@ -2606,6 +2753,7 @@ app.put("/api/admin/:token/questions/:questionId", requireToken, async (req, res
       await models.Option.create({
         QuestionId: q.id,
         text: opt.text,
+        image: opt.image || "",
         isCorrect: !!opt.isCorrect,
         orderIndex: Number(opt.orderIndex || 0)
       });
