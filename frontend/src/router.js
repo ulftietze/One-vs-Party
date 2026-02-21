@@ -8,6 +8,7 @@ import GuestLive from "./pages/GuestLive.vue";
 import GuestAsync from "./pages/GuestAsync.vue";
 import Player from "./pages/Player.vue";
 import ResultsShare from "./pages/ResultsShare.vue";
+import StatsSimulator from "./pages/StatsSimulator.vue";
 
 export default createRouter({
   history: createWebHashHistory(),
@@ -23,6 +24,7 @@ export default createRouter({
     { path: "/guest/live/:token", component: GuestLive, props: true },
     { path: "/guest/async/:token", component: GuestAsync, props: true },
     { path: "/player/:token", component: Player, props: true },
-    { path: "/results/:token", component: ResultsShare, props: true }
+    { path: "/results/:token", component: ResultsShare, props: true },
+    { path: "/sim/stats", component: StatsSimulator }
   ]
 });

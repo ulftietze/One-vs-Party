@@ -114,6 +114,14 @@
             {{ t("Show quiz title (presentation)") }}
           </label>
           <label style="display:flex; gap:8px; align-items:center; font-weight:700; cursor:pointer;">
+            <input type="checkbox" v-model="showParticipantMedia" @change="savePublish" style="width:18px; height:18px;" />
+            Show media for player and guests
+          </label>
+          <label style="display:flex; gap:8px; align-items:center; font-weight:700; cursor:pointer;">
+            <input type="checkbox" v-model="showTopPlayers" @change="savePublish" style="width:18px; height:18px;" />
+            Show best players (presentation)
+          </label>
+          <label style="display:flex; gap:8px; align-items:center; font-weight:700; cursor:pointer;">
             <input type="checkbox" v-model="autoRevealEnabled" @change="savePublish" style="width:18px; height:18px;" />
             Auto reveal when everyone has submitted
           </label>
@@ -594,6 +602,8 @@ const tieWinText = ref("");
 const isPublished = ref(false);
 const showScore = ref(true);
 const showQuizTitle = ref(true);
+const showParticipantMedia = ref(true);
+const showTopPlayers = ref(true);
 const autoRevealEnabled = ref(true);
 const autoRevealDelaySeconds = ref(2);
 const uiLanguage = ref("en");
@@ -919,6 +929,8 @@ async function load() {
   isPublished.value = !!data.game?.isPublished;
   showScore.value = data.game?.showScore !== false;
   showQuizTitle.value = data.game?.showQuizTitle !== false;
+  showParticipantMedia.value = data.game?.showParticipantMedia !== false;
+  showTopPlayers.value = data.game?.showTopPlayers !== false;
   autoRevealEnabled.value = data.game?.autoRevealEnabled !== false;
   autoRevealDelaySeconds.value = normalizeAutoRevealDelaySeconds(data.game?.autoRevealDelaySeconds);
   uiLanguage.value = String(data.game?.uiLanguage || "en");
@@ -1521,6 +1533,8 @@ async function savePublish() {
     isPublished: isPublished.value,
     showScore: showScore.value,
     showQuizTitle: showQuizTitle.value,
+    showParticipantMedia: showParticipantMedia.value,
+    showTopPlayers: showTopPlayers.value,
     autoRevealEnabled: autoRevealEnabled.value,
     autoRevealDelaySeconds: autoRevealDelaySeconds.value,
     uiLanguage: uiLanguage.value || "en"
@@ -1570,6 +1584,8 @@ function setupSocket() {
       isPublished.value = !!s.game?.isPublished;
       showScore.value = s.game?.showScore !== false;
       showQuizTitle.value = s.game?.showQuizTitle !== false;
+      showParticipantMedia.value = s.game?.showParticipantMedia !== false;
+      showTopPlayers.value = s.game?.showTopPlayers !== false;
       autoRevealEnabled.value = s.game?.autoRevealEnabled !== false;
       autoRevealDelaySeconds.value = normalizeAutoRevealDelaySeconds(s.game?.autoRevealDelaySeconds);
       uiLanguage.value = String(s.game?.uiLanguage || "en");
@@ -1584,6 +1600,8 @@ function setupSocket() {
         isPublished.value = !!data.game?.isPublished;
         showScore.value = data.game?.showScore !== false;
         showQuizTitle.value = data.game?.showQuizTitle !== false;
+        showParticipantMedia.value = data.game?.showParticipantMedia !== false;
+        showTopPlayers.value = data.game?.showTopPlayers !== false;
         autoRevealEnabled.value = data.game?.autoRevealEnabled !== false;
         autoRevealDelaySeconds.value = normalizeAutoRevealDelaySeconds(data.game?.autoRevealDelaySeconds);
         uiLanguage.value = String(data.game?.uiLanguage || "en");

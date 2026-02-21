@@ -30,6 +30,7 @@
               :question="question"
               :disabled="isQuestionLocked(i)"
               :selected-option-ids="selectionFor(question.id)"
+              :show-media="state.game?.showParticipantMedia !== false"
               :hint="answerHint(question.id, i)"
               @submit="(ids) => submit(question.id, ids)"
             />

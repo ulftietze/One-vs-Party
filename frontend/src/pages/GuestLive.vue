@@ -27,6 +27,7 @@
                       :question="q"
                       :disabled="state.game?.phase === 'revealed'"
                       :selected-option-ids="currentSelection"
+                      :show-media="state.game?.showParticipantMedia !== false"
                       :hint="answerHint"
                       @submit="submit" />
 

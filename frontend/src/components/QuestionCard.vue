@@ -4,16 +4,16 @@
       {{ question.text }}
     </div>
 
-    <div v-if="question.promptImage" style="margin-bottom:12px; display:flex; justify-content:center;">
+    <div v-if="canShowMedia && question.promptImage" style="margin-bottom:12px; display:flex; justify-content:center;">
       <img :src="question.promptImage" alt="Question image"
            @click="openImageViewer(question.promptImage)"
            class="zoomable-image"
            style="max-width:100%; max-height:360px; object-fit:contain; border:1px solid #ddd; border-radius:10px; background:#fff; padding:6px; cursor:zoom-in;" />
     </div>
-    <div v-if="question.promptAudio" style="margin-bottom:12px;">
+    <div v-if="canShowMedia && question.promptAudio" style="margin-bottom:12px;">
       <audio :src="question.promptAudio" controls preload="metadata" style="width:100%;"></audio>
     </div>
-    <div v-if="question.promptVideo" style="margin-bottom:12px;">
+    <div v-if="canShowMedia && question.promptVideo" style="margin-bottom:12px;">
       <video :src="question.promptVideo" controls preload="metadata"
              style="width:100%; max-height:320px; border:1px solid #ddd; border-radius:10px; background:#000;"></video>
     </div>
@@ -53,7 +53,7 @@
             ⇅
           </button>
           <div style="flex:1; display:grid; gap:8px;">
-            <img v-if="entry.option.image" :src="entry.option.image" alt="Option image"
+            <img v-if="canShowMedia && entry.option.image" :src="entry.option.image" alt="Option image"
                  @click.stop="openImageViewer(entry.option.image)"
                  class="zoomable-image"
                  style="max-width:120px; max-height:72px; object-fit:cover; border:1px solid #ddd; border-radius:8px; background:#fff;" />
@@ -82,8 +82,8 @@
       <label v-for="o in question.options" :key="o.id"
              :class="['option-tile', 'option-tile--check', { 'is-selected': multi.includes(String(o.id)) }]">
         <input type="checkbox" :disabled="disabled" :value="String(o.id)" v-model="multi" class="option-check" />
-        <div :class="['option-content', { 'has-media': !!o.image }]">
-          <div v-if="o.image" class="option-media-wrap">
+        <div :class="['option-content', { 'has-media': canShowMedia && !!o.image }]">
+          <div v-if="canShowMedia && o.image" class="option-media-wrap">
             <img :src="o.image" alt="Option image"
                  @click.prevent.stop="openImageViewer(o.image)"
                  class="zoomable-image option-media" />
@@ -104,8 +104,8 @@
               :disabled="disabled"
               @click="pickSingle(String(o.id))"
               :class="['option-tile', 'option-tile--single', { 'is-selected': single === String(o.id) }]">
-        <div :class="['option-content', { 'has-media': !!o.image }]">
-          <div v-if="o.image" class="option-media-wrap">
+        <div :class="['option-content', { 'has-media': canShowMedia && !!o.image }]">
+          <div v-if="canShowMedia && o.image" class="option-media-wrap">
             <img :src="o.image" alt="Option image"
                  @click.stop.prevent="openImageViewer(o.image)"
                  class="zoomable-image option-media" />
@@ -134,7 +134,8 @@ const props = defineProps({
   question: { type: Object, required: true },
   disabled: { type: Boolean, default: false },
   hint: { type: String, default: "" },
-  selectedOptionIds: { type: Array, default: () => [] }
+  selectedOptionIds: { type: Array, default: () => [] },
+  showMedia: { type: Boolean, default: true }
 });
 
 const emit = defineEmits(["submit"]);
@@ -154,6 +155,7 @@ const imageViewerSrc = ref("");
 const type = computed(() => String(props.question?.type || "choice"));
 const isEstimate = computed(() => type.value === "estimate");
 const isOrder = computed(() => type.value === "order");
+const canShowMedia = computed(() => props.showMedia !== false);
 
 const optionMap = computed(() => {
   const map = new Map();

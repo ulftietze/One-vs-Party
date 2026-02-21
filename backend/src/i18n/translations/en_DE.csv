@@ -93,6 +93,7 @@
 "Correct order","Korrekte Reihenfolge"
 "Answer {playerName}","Antwort {playerName}"
 "correct","korrekt"
+"Correct","Korrekt"
 "Solution","Lösung"
 "Score","Stand"
 "Fullscreen","Vollbild"
@@ -282,3 +283,4 @@
 "+/-2 points","+/-2 Punkte"
 "Sort via drag and drop (or with ↑/↓).","Per Drag-and-Drop sortieren (oder mit ↑/↓)."
 "drag","ziehen"
+"Show media for player and guests","Medien für Spieler und Gäste anzeigen"

@@ -70,7 +70,7 @@
           <div v-if="shareMessage" style="margin-top:8px; font-size:13px; opacity:0.8;">{{ shareMessage }}</div>
         </div>
 
-        <div v-if="topRankings.length > 0" style="margin-top:30px;">
+        <div v-if="state.game?.showTopPlayers !== false && topRankings.length > 0" style="margin-top:30px;">
           <div style="font-size:26px; font-weight:900; margin-bottom:12px; color:#004e96;">Who knows {{ playerName }} best?</div>
           <div style="display:grid; gap:8px;">
             <div v-for="(r, i) in topRankings" :key="r.id"
@@ -343,7 +343,7 @@
             </div>
             <button @click="statsModalOpen = false" class="stats-modal-close">✕</button>
           </div>
-          <GuestVoteBars :votes="effectiveVotes" :playerAnswer="revealedPlayerAnswer" :player-label="playerName" mode="vertical" variant="modal" />
+          <GuestVoteBars :votes="effectiveVotes" :playerAnswer="revealedPlayerAnswer" :player-label="playerName" mode="bubble" variant="modal" />
         </div>
       </div>
     </transition>
@@ -767,7 +767,6 @@ onMounted(async () => {
   });
 
   socket.on("reveal", ({ guestVotes: gv, playerAnswer, solution, questionType, estimate }) => {
-    statsModalOpen.value = false;
     previewVotes.value = null;
     revealedPlayerAnswer.value = (playerAnswer || []).map(String);
     const nextSolution = {
@@ -791,7 +790,9 @@ onMounted(async () => {
     guestVotes.value = mappedVotes;
     const hasSolution = !!(String(nextSolution.text || "").trim() || nextSolution.image || nextSolution.audio || nextSolution.video);
     const supportsVotes = !["estimate", "order"].includes(nextType);
-    statsModalOpen.value = supportsVotes && mappedVotes.length > 0 && !hasSolution;
+    if (!statsModalOpen.value) {
+      statsModalOpen.value = supportsVotes && mappedVotes.length > 0 && !hasSolution;
+    }
   });
 
   socket.on("answer_received", ({ participantId, questionId }) => {

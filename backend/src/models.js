@@ -24,6 +24,10 @@ export function defineModels(sequelize) {
     showScore: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
     // Steuert, ob der Quiztitel auf der Präsentationsseite sichtbar ist
     showQuizTitle: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
+    // Steuert, ob Frage-Medien (Prompt/Option-Bilder) bei Player/Gästen angezeigt werden
+    showParticipantMedia: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
+    // Steuert, ob die Top-Spieler-Liste in der Präsentations-Ansicht angezeigt wird
+    showTopPlayers: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
     // Auto-Reveal: automatisch auflösen, wenn alle abgegeben haben
     autoRevealEnabled: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
     autoRevealDelaySeconds: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 2 },

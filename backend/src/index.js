@@ -1881,6 +1881,8 @@ async function emitGameState(gameId) {
       tieWinText: game.tieWinText,
       showScore: game.showScore,
       showQuizTitle: game.showQuizTitle !== false,
+      showParticipantMedia: game.showParticipantMedia !== false,
+      showTopPlayers: game.showTopPlayers !== false,
       autoRevealEnabled: game.autoRevealEnabled !== false,
       autoRevealDelaySeconds: normalizeAutoRevealDelaySeconds(game.autoRevealDelaySeconds),
       lastStartedAt: game.lastStartedAt,
@@ -2922,6 +2924,8 @@ app.post("/api/admin/:token/publish", requireToken, async (req, res) => {
   const isPublished = !!req.body?.isPublished;
   const showScore = req.body?.showScore !== undefined ? !!req.body.showScore : undefined;
   const showQuizTitle = req.body?.showQuizTitle !== undefined ? !!req.body.showQuizTitle : undefined;
+  const showParticipantMedia = req.body?.showParticipantMedia !== undefined ? !!req.body.showParticipantMedia : undefined;
+  const showTopPlayers = req.body?.showTopPlayers !== undefined ? !!req.body.showTopPlayers : undefined;
   const uiLanguage = req.body?.uiLanguage !== undefined
     ? normalizeUiLanguage(req.body?.uiLanguage)
     : undefined;
@@ -2935,6 +2939,8 @@ app.post("/api/admin/:token/publish", requireToken, async (req, res) => {
   const update = { isPublished };
   if (showScore !== undefined) update.showScore = showScore;
   if (showQuizTitle !== undefined) update.showQuizTitle = showQuizTitle;
+  if (showParticipantMedia !== undefined) update.showParticipantMedia = showParticipantMedia;
+  if (showTopPlayers !== undefined) update.showTopPlayers = showTopPlayers;
   if (uiLanguage !== undefined) update.uiLanguage = uiLanguage;
   if (autoRevealEnabled !== undefined) update.autoRevealEnabled = autoRevealEnabled;
   if (autoRevealDelaySeconds !== undefined) update.autoRevealDelaySeconds = autoRevealDelaySeconds;
