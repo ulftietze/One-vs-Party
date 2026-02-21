@@ -51,7 +51,17 @@
         <div v-if="winnerText" data-no-i18n="1" style="margin-top:10px; font-size:18px; font-weight:700; opacity:0.9; white-space:pre-wrap;">
           {{ winnerText }}
         </div>
-        <div v-if="shareLink" style="margin-top:18px; padding:12px; border:2px solid #004e96; border-radius:12px; background:#f0f7ff;">
+        <div v-if="finishMedia.url" style="margin-top:16px; padding:12px; border:2px solid #004e96; border-radius:12px; background:#f0f7ff;">
+          <div style="font-size:16px; font-weight:900; color:#004e96; margin-bottom:8px;">Final media</div>
+          <img v-if="finishMedia.medium==='image'" :src="finishMedia.url" alt="Final media"
+               @click="openFullscreenImage(finishMedia.url)"
+               class="clickable-image"
+               style="max-width:100%; max-height:48vh; object-fit:contain; border-radius:12px; border:1px solid #cbd5e1; background:#fff;" />
+          <audio v-else-if="finishMedia.medium==='audio'" :src="finishMedia.url" controls preload="metadata" style="width:100%;"></audio>
+          <video v-else-if="finishMedia.medium==='video'" :src="finishMedia.url" controls preload="metadata"
+                 style="width:100%; max-height:48vh; border-radius:12px; border:1px solid #cbd5e1; background:#000;"></video>
+        </div>
+        <div v-if="state.game?.showTopPlayers !== false && shareLink" style="margin-top:18px; padding:12px; border:2px solid #004e96; border-radius:12px; background:#f0f7ff;">
           <div style="font-size:18px; font-weight:900; color:#004e96; margin-bottom:8px;">Share results</div>
           <div style="display:flex; gap:8px; flex-wrap:wrap;">
             <button @click="copyShareLink"
@@ -476,6 +486,28 @@ const winnerText = computed(() => {
   if (g.winner === "guests") return g.guestWinText || "";
   if (g.winner === "tie") return g.tieWinText || "";
   return "";
+});
+
+function inferMediumFromRef(raw) {
+  const value = String(raw || "").trim().toLowerCase();
+  if (!value) return "";
+  if (/\.(png|jpe?g|webp|gif|bmp|avif|tiff?|svg)(\?|#|$)/.test(value)) return "image";
+  if (/\.(mp3|m4a|aac|wav|ogg|oga|flac|opus)(\?|#|$)/.test(value)) return "audio";
+  if (/\.(mp4|mov|m4v|webm|mkv|avi|mpeg|mpg|ogv)(\?|#|$)/.test(value)) return "video";
+  return "";
+}
+
+const finishMedia = computed(() => {
+  const g = state.value.game || {};
+  const image = String(g.finishMediaImage || "").trim();
+  const audio = String(g.finishMediaAudio || "").trim();
+  const video = String(g.finishMediaVideo || "").trim();
+  if (image) return { medium: "image", url: image };
+  if (audio) return { medium: "audio", url: audio };
+  if (video) return { medium: "video", url: video };
+  const fallback = String(g.finishMedia || "").trim();
+  if (!fallback) return { medium: "", url: "" };
+  return { medium: inferMediumFromRef(fallback), url: fallback };
 });
 
 const topRankings = computed(() => (state.value.score?.rankings || []).slice(0, 3));

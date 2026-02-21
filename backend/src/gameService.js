@@ -82,6 +82,11 @@ function normalizeGuestThresholdPercent(value) {
   return Math.max(0, Math.min(100, Math.round(n)));
 }
 
+function normalizeGuestCorrectRule(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  return raw === "plurality" ? "plurality" : "threshold";
+}
+
 function guestTeamWinnerForQuestion(question, guestAnswers) {
   const submittedAnswers = [];
   for (const a of guestAnswers || []) {
@@ -90,6 +95,41 @@ function guestTeamWinnerForQuestion(question, guestAnswers) {
     submittedAnswers.push(parsed);
   }
   if (!submittedAnswers.length) return { winnerKey: null, isCorrect: false, hasAnswer: false };
+
+  const rule = normalizeGuestCorrectRule(question?.guestCorrectRule);
+  const type = asQuestionType(question);
+
+  if (rule === "plurality" && type !== "estimate" && type !== "order") {
+    const validOptionIds = new Set((question?.Options || []).map(o => String(o.id)));
+    const optionById = new Map((question?.Options || []).map(o => [String(o.id), o]));
+    const counts = new Map();
+
+    for (const answer of submittedAnswers) {
+      for (const id of answer) {
+        const key = String(id);
+        if (!validOptionIds.has(key)) continue;
+        counts.set(key, (counts.get(key) || 0) + 1);
+      }
+    }
+
+    if (!counts.size) return { winnerKey: null, isCorrect: false, hasAnswer: true };
+
+    const maxVotes = Math.max(...counts.values());
+    const winners = [...counts.entries()]
+      .filter(([, count]) => count === maxVotes)
+      .map(([key]) => key);
+    if (winners.length !== 1) {
+      return { winnerKey: null, isCorrect: false, hasAnswer: true };
+    }
+
+    const winnerKey = winners[0];
+    const winnerOption = optionById.get(winnerKey);
+    return {
+      winnerKey,
+      isCorrect: !!winnerOption?.isCorrect,
+      hasAnswer: true
+    };
+  }
 
   const correctCount = submittedAnswers.reduce((sum, answer) => sum + (evaluateAnswer(question, answer) ? 1 : 0), 0);
   const thresholdPercent = normalizeGuestThresholdPercent(question?.guestCorrectThresholdPercent);

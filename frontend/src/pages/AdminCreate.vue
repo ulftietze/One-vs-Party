@@ -61,6 +61,10 @@
                   style="padding:10px 12px; border-radius:12px; border:1px solid #e10011; background:#fff1f2; color:#7f1d1d; font-weight:800;">
             Delete
           </button>
+          <button @click="exportFullGame(g)"
+                  style="padding:10px 12px; border-radius:12px; border:1px solid #ddd; background:#fff; font-weight:800;">
+            Export full quiz
+          </button>
           <a v-if="g.tokens?.present" :href="gamePresentLink(g)" style="padding:10px 12px; border-radius:12px; border:1px solid #ddd; background:#fff; font-weight:800; text-decoration:none; color:inherit;">
             Presentation
           </a>
@@ -71,6 +75,24 @@
       </div>
 
       <div v-if="gamesMsg" style="font-size:13px; opacity:0.8;">{{ gamesMsg }}</div>
+
+      <div v-if="adminSession" style="margin-top:8px; border-top:1px solid #eee; padding-top:12px; display:grid; gap:10px;">
+        <div style="font-weight:800;">Import full quiz</div>
+        <div style="font-size:13px; opacity:0.75;">
+          Imports title, player, game settings, winner texts, final media and all questions with media.
+        </div>
+        <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+          <input ref="fullImportInput" type="file" accept=".json,application/json" @change="onFullImportFileChange"
+                 style="padding:8px; border:1px solid #ddd; border-radius:10px; background:#fff;" />
+          <button @click="importFullGame"
+                  :disabled="fullImportBusy || !fullImportFile"
+                  :style="fullImportBusy || !fullImportFile
+                    ? 'padding:10px 12px; border-radius:12px; border:1px solid #ddd; background:#f5f5f5; color:#777; font-weight:800;'
+                    : 'padding:10px 12px; border-radius:12px; border:0; background:#004e96; color:#fff; font-weight:800;'">
+            Import full quiz
+          </button>
+        </div>
+      </div>
     </div>
 
     <div style="display:grid; gap:10px; border:1px solid #eee; border-radius:14px; padding:16px;">
@@ -136,11 +158,33 @@ const adminSession = ref(localStorage.getItem("ADMIN_SESSION_TOKEN") || "");
 const games = ref([]);
 const gamesLoading = ref(false);
 const gamesMsg = ref("");
+const fullImportFile = ref(null);
+const fullImportInput = ref(null);
+const fullImportBusy = ref(false);
 
 const createdUrls = computed(() => appLinksFromTokens(created.value?.tokens || {}));
 
 function adminHeaders() {
   return { headers: { "x-admin-session": adminSession.value } };
+}
+
+function fileNameFromDisposition(disposition, fallback) {
+  const raw = String(disposition || "");
+  const star = raw.match(/filename\*=UTF-8''([^;]+)/i);
+  if (star?.[1]) return decodeURIComponent(star[1]);
+  const plain = raw.match(/filename=\"?([^\";]+)\"?/i);
+  return plain?.[1] || fallback;
+}
+
+function downloadBlob(blob, fileName) {
+  const href = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = href;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(href), 1200);
 }
 
 onMounted(async () => {
@@ -249,6 +293,45 @@ function gameResultsLink(game) {
 
 function createdQrUrl(type) {
   return qrUrlForTargetUrl(createdUrls.value?.[type] || "");
+}
+
+async function exportFullGame(game) {
+  const id = Number(game?.id || 0);
+  if (!Number.isFinite(id) || id <= 0) return;
+  const res = await api.get(`/admin/master/games/${id}/export`, {
+    ...adminHeaders(),
+    responseType: "blob"
+  }).catch(() => null);
+  if (!res?.data) {
+    gamesMsg.value = t("Export failed.");
+    return;
+  }
+  const fallbackName = `quiz_${id}_full.json`;
+  const fileName = fileNameFromDisposition(res?.headers?.["content-disposition"], fallbackName);
+  downloadBlob(res.data, fileName);
+  gamesMsg.value = t("Full quiz export ready.");
+}
+
+function onFullImportFileChange(evt) {
+  fullImportFile.value = evt?.target?.files?.[0] || null;
+}
+
+async function importFullGame() {
+  if (!fullImportFile.value) return;
+  fullImportBusy.value = true;
+  const form = new FormData();
+  form.append("file", fullImportFile.value);
+  const { data } = await api.post("/admin/master/games/import", form, adminHeaders())
+    .catch(e => ({ data: { error: e?.response?.data?.error || "error" } }));
+  fullImportBusy.value = false;
+  if (!data?.ok) {
+    gamesMsg.value = t("Error: {error}", { error: data?.error || "error" });
+    return;
+  }
+  fullImportFile.value = null;
+  if (fullImportInput.value) fullImportInput.value.value = "";
+  gamesMsg.value = t("Full quiz imported.");
+  await loadGames();
 }
 
 async function create() {

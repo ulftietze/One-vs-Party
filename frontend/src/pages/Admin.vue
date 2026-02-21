@@ -160,6 +160,18 @@
       </div>
 
       <div v-if="activeTab==='game'" class="admin-card" style="border:1px solid #eee; border-radius:14px; padding:16px;">
+        <h2 style="margin:0 0 10px;">Quiz title</h2>
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+          <input v-model="gameTitle" placeholder="Quiz title"
+                 style="flex:1; min-width:240px; padding:10px 12px; border-radius:12px; border:1px solid #ddd;" />
+          <button @click="saveGameTitle"
+                  style="padding:10px 12px; border-radius:12px; border:0; background:#111; color:#fff; font-weight:800;">
+            Save
+          </button>
+        </div>
+      </div>
+
+      <div v-if="activeTab==='game'" class="admin-card" style="border:1px solid #eee; border-radius:14px; padding:16px;">
         <h2 style="margin:0 0 10px;">Finish: winner text</h2>
         <div v-if="game?.status==='finished'" style="margin-bottom:10px; font-weight:900;">
           Winner: <span v-if="game?.winner==='player'">{{ playerName }}</span>
@@ -182,10 +194,29 @@
             <textarea v-model="tieWinText" rows="2" placeholder="Text on tie"
                       style="width:100%; padding:10px 12px; border-radius:12px; border:1px solid #ddd;"></textarea>
           </div>
+          <div>
+            <div style="font-weight:800; margin-bottom:6px;">Final media on presentation result page (optional)</div>
+            <input v-model="finishMedia"
+                   @input="onFinishMediaInput"
+                   placeholder="Media URL (image/audio/video)"
+                   style="width:100%; padding:10px 12px; border-radius:12px; border:1px solid #ddd;" />
+            <input type="file" accept="image/*,audio/*,video/*" @change="onFinishMediaFile" style="margin-top:8px;" />
+            <img v-if="finishMedia && finishMediaKind==='image'" :src="finishMedia" alt="Final media preview"
+                 @click="openFullscreenImage(finishMedia)"
+                 class="clickable-image"
+                 style="margin-top:8px; max-width:280px; max-height:180px; object-fit:contain; border:1px solid #ddd; border-radius:10px; background:#fff; padding:6px;" />
+            <audio v-else-if="finishMedia && finishMediaKind==='audio'" :src="finishMedia" controls preload="metadata" style="margin-top:8px;"></audio>
+            <video v-else-if="finishMedia && finishMediaKind==='video'" :src="finishMedia" controls preload="metadata"
+                   style="margin-top:8px; max-width:340px; max-height:220px; border:1px solid #ddd; border-radius:10px; background:#000;"></video>
+          </div>
           <div style="display:flex; gap:10px; flex-wrap:wrap;">
             <button @click="saveWinTexts"
                     style="padding:10px 12px; border-radius:12px; border:0; background:#111; color:#fff; font-weight:800;">
-              Save
+              Save winner texts
+            </button>
+            <button @click="saveFinishMedia"
+                    style="padding:10px 12px; border-radius:12px; border:1px solid #111; background:#fff; color:#111; font-weight:800;">
+              Save final media
             </button>
           </div>
         </div>
@@ -196,6 +227,30 @@
         <div style="font-size:13px; opacity:0.82; margin-bottom:14px;">
           Apply, export, or save question packages with media.
         </div>
+
+        <details class="import-step" open>
+          <summary>Full quiz import/export (game + questions + media)</summary>
+          <div class="import-step-body">
+            <div style="font-size:13px; opacity:0.82;">
+              Includes title, player name, game settings, winner texts, final media and all questions.
+            </div>
+            <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+              <button @click="exportFullQuiz"
+                      style="padding:10px 12px; border-radius:12px; border:1px solid #ddd; background:#fff; font-weight:800;">
+                Export full quiz (JSON)
+              </button>
+              <input ref="fullQuizImportInput" type="file" accept=".json,application/json" @change="onFullQuizImportFileChange"
+                     style="padding:8px; border:1px solid #ddd; border-radius:10px; background:#fff;" />
+              <button @click="runFullQuizImport"
+                      :disabled="fullQuizImportBusy || !fullQuizImportFile"
+                      :style="fullQuizImportBusy || !fullQuizImportFile
+                        ? 'padding:10px 12px; border-radius:12px; border:1px solid #ddd; background:#f5f5f5; color:#777; font-weight:800;'
+                        : 'padding:10px 12px; border-radius:12px; border:0; background:#004e96; color:#fff; font-weight:800;'">
+                Import full quiz
+              </button>
+            </div>
+          </div>
+        </details>
 
         <details class="import-step" open>
           <summary>Apply template</summary>
@@ -340,7 +395,7 @@
                   <div style="font-size:13px; opacity:0.8; margin-top:4px;">
                     Type: {{ questionTypeLabel(entry.question.type) }}
                     · {{ entry.question.Options?.length || 0 }} options
-                    · Guests ≥ {{ normalizeGuestThresholdPercent(entry.question.guestCorrectThresholdPercent) }}%
+                    · {{ guestScoringLabel(entry.question) }}
                     <span v-if="entry.question.type==='risk'"> · +/-2 points</span>
                   </div>
                   <div style="margin-top:8px;">
@@ -409,6 +464,13 @@
             <option value="risk">Risk question (+2 / -2)</option>
           </select>
           <label style="display:grid; gap:6px; padding:8px 0;">
+            <span style="font-size:13px; font-weight:800; color:#334155;">Guests team scoring</span>
+            <select v-model="guestCorrectRule" style="padding:10px 12px; border-radius:12px; border:1px solid #ddd;">
+              <option value="threshold">Threshold (%)</option>
+              <option value="plurality">Plurality (most votes wins)</option>
+            </select>
+          </label>
+          <label v-if="guestCorrectRule === 'threshold'" style="display:grid; gap:6px; padding:8px 0;">
             <span style="font-size:13px; font-weight:800; color:#334155;">{{ t("Guest correct threshold (%)") }}</span>
             <input v-model.number="guestCorrectThresholdPercent" type="number" min="0" max="100" step="1"
                    style="padding:10px 12px; border-radius:12px; border:1px solid #ddd;" />
@@ -596,9 +658,15 @@ const questions = ref([]);
 const activeTab = ref("game");
 const playerName = ref("");
 const links = ref(null);
+const gameTitle = ref("");
 const guestWinText = ref("");
 const playerWinText = ref("");
 const tieWinText = ref("");
+const finishMedia = ref("");
+const finishMediaKind = ref("");
+const finishMediaImage = ref("");
+const finishMediaAudio = ref("");
+const finishMediaVideo = ref("");
 const isPublished = ref(false);
 const showScore = ref(true);
 const showQuizTitle = ref(true);
@@ -631,6 +699,7 @@ const solutionImage = ref("");
 const solutionAudio = ref("");
 const solutionVideo = ref("");
 const guestCorrectThresholdPercent = ref(50);
+const guestCorrectRule = ref("threshold");
 const options = ref([
   { text: "", image: "", isCorrect: false },
   { text: "", image: "", isCorrect: false },
@@ -658,6 +727,9 @@ const importSaveTemplateName = ref("");
 const importFile = ref(null);
 const importFileInput = ref(null);
 const importBusy = ref(false);
+const fullQuizImportFile = ref(null);
+const fullQuizImportInput = ref(null);
+const fullQuizImportBusy = ref(false);
 const questionFieldTouched = ref({});
 const fullscreenImageSrc = ref("");
 
@@ -853,6 +925,17 @@ function normalizeGuestThresholdPercent(value) {
   return Math.max(0, Math.min(100, Math.round(n)));
 }
 
+function normalizeGuestCorrectRule(value) {
+  const v = String(value || "").trim().toLowerCase();
+  return v === "plurality" ? "plurality" : "threshold";
+}
+
+function guestScoringLabel(question) {
+  const rule = normalizeGuestCorrectRule(question?.guestCorrectRule);
+  if (rule === "plurality") return "Guests: most votes wins";
+  return `Guests >= ${normalizeGuestThresholdPercent(question?.guestCorrectThresholdPercent)}%`;
+}
+
 function questionTypeLabel(type) {
   const t = String(type || "choice");
   if (t === "estimate") return "Estimate question";
@@ -876,6 +959,8 @@ function questionErrorText(code) {
   if (c === "upload_failed") return "Upload/optimization failed.";
   if (c === "payload_too_large") return "Upload is too large for the server. Please use a smaller file.";
   if (c === "no_questions") return "No questions available.";
+  if (c === "invalid_title") return "Please enter a valid title.";
+  if (c === "personal_share_disabled") return "Personal share is disabled by game configuration.";
   if (c === "missing_package_id") return "Please select a question package first.";
   if (c === "package_not_found") return "Question package not found.";
   if (c === "invalid_json") return "JSON file is invalid.";
@@ -918,6 +1003,16 @@ function setSolutionMedia(url, mediumHint = "") {
   solutionVideo.value = medium === "video" ? value : "";
 }
 
+function setFinishMedia(url, mediumHint = "") {
+  const value = String(url || "").trim();
+  const medium = mediumHint || inferMediumFromRef(value);
+  finishMedia.value = value;
+  finishMediaKind.value = medium;
+  finishMediaImage.value = medium === "image" ? value : "";
+  finishMediaAudio.value = medium === "audio" ? value : "";
+  finishMediaVideo.value = medium === "video" ? value : "";
+}
+
 async function load() {
   const { data } = await api.get(`/state/${props.token}`);
   game.value = data.game;
@@ -925,6 +1020,7 @@ async function load() {
     ...q,
     blockLabel: normalizeBlockLabel(q.blockLabel)
   }));
+  gameTitle.value = data.game?.title || "";
   playerName.value = data.player?.nickname || "";
   isPublished.value = !!data.game?.isPublished;
   showScore.value = data.game?.showScore !== false;
@@ -940,6 +1036,10 @@ async function load() {
   guestWinText.value = data.game?.guestWinText || "";
   playerWinText.value = data.game?.playerWinText || "";
   tieWinText.value = data.game?.tieWinText || "";
+  setFinishMedia(
+    data.game?.finishMediaVideo || data.game?.finishMediaAudio || data.game?.finishMediaImage || "",
+    data.game?.finishMediaVideo ? "video" : data.game?.finishMediaAudio ? "audio" : data.game?.finishMediaImage ? "image" : ""
+  );
   if (!String(newPackageName.value || "").trim()) {
     newPackageName.value = `${data.game?.title || "Quiz"} package`;
   }
@@ -1046,6 +1146,47 @@ async function exportQuestionPackage(format) {
   }
 }
 
+async function exportFullQuiz() {
+  try {
+    const res = await api.get(`/admin/${props.token}/full-export`, {
+      responseType: "blob"
+    });
+    const fallbackName = "quiz_full.json";
+    const fileName = fileNameFromDisposition(res?.headers?.["content-disposition"], fallbackName);
+    downloadBlob(res.data, fileName);
+    showToast("Full quiz export ready.", "success");
+  } catch (err) {
+    const code = err?.response?.data?.error || "error";
+    showToast(questionErrorText(code), "error");
+  }
+}
+
+function onFullQuizImportFileChange(evt) {
+  fullQuizImportFile.value = evt?.target?.files?.[0] || null;
+}
+
+async function runFullQuizImport() {
+  if (!fullQuizImportFile.value) {
+    showToast("Please select a file first.", "error");
+    return;
+  }
+  fullQuizImportBusy.value = true;
+  const form = new FormData();
+  form.append("file", fullQuizImportFile.value);
+  const { data } = await api.post(`/admin/${props.token}/full-import`, form)
+    .catch(e => ({ data: { error: e?.response?.data?.error || "error" } }));
+  fullQuizImportBusy.value = false;
+  if (data?.ok) {
+    showToast(`Full quiz imported (${data.imported || 0} questions).`, "success");
+    fullQuizImportFile.value = null;
+    if (fullQuizImportInput.value) fullQuizImportInput.value.value = "";
+    await load();
+    await loadPackages();
+    return;
+  }
+  showToast(questionErrorText(data?.error), "error");
+}
+
 function onImportFileChange(evt) {
   importFile.value = evt?.target?.files?.[0] || null;
 }
@@ -1093,6 +1234,38 @@ async function saveWinTexts() {
   }
 }
 
+async function saveGameTitle() {
+  const cleanTitle = String(gameTitle.value || "").trim();
+  if (!cleanTitle) {
+    showToast("Please enter a quiz title.", "error");
+    return;
+  }
+  const { data } = await api.post(`/admin/${props.token}/title`, {
+    title: cleanTitle
+  }).catch(e => ({ data: { error: e?.response?.data?.error || "error" } }));
+  if (data?.ok) {
+    showToast("Quiz title saved.", "success");
+    await load();
+  } else {
+    showToast(`Error: ${data?.error || "error"}`, "error");
+  }
+}
+
+async function saveFinishMedia() {
+  const { data } = await api.post(`/admin/${props.token}/finish-media`, {
+    finishMedia: finishMedia.value,
+    finishMediaImage: finishMediaImage.value,
+    finishMediaAudio: finishMediaAudio.value,
+    finishMediaVideo: finishMediaVideo.value
+  }).catch(e => ({ data: { error: e?.response?.data?.error || "error" } }));
+  if (data?.ok) {
+    showToast("Final media saved.", "success");
+    await load();
+  } else {
+    showToast(`Error: ${data?.error || "error"}`, "error");
+  }
+}
+
 function resetForm() {
   qText.value = "";
   qType.value = "choice";
@@ -1113,6 +1286,7 @@ function resetForm() {
   solutionAudio.value = "";
   solutionVideo.value = "";
   guestCorrectThresholdPercent.value = 50;
+  guestCorrectRule.value = "threshold";
   options.value = [
     { text: "", image: "", isCorrect: false },
     { text: "", image: "", isCorrect: false },
@@ -1198,6 +1372,7 @@ async function saveQuestion() {
     solutionAudio: solutionAudio.value,
     solutionVideo: solutionVideo.value,
     guestCorrectThresholdPercent: normalizeGuestThresholdPercent(guestCorrectThresholdPercent.value),
+    guestCorrectRule: normalizeGuestCorrectRule(guestCorrectRule.value),
     options: options.value.map((o, idx) => ({
       text: o.text,
       image: o.image || "",
@@ -1238,6 +1413,7 @@ function beginEdit(q) {
   const hasSolutionText = !!String(solutionText.value || "").trim();
   const hasSolutionMedia = !!String(solutionMedia.value || "").trim();
   guestCorrectThresholdPercent.value = normalizeGuestThresholdPercent(q.guestCorrectThresholdPercent);
+  guestCorrectRule.value = normalizeGuestCorrectRule(q.guestCorrectRule);
   if (hasSolutionText && hasSolutionMedia) solutionType.value = "both";
   else if (hasSolutionText) solutionType.value = "text";
   else if (hasSolutionMedia) solutionType.value = "image";
@@ -1296,6 +1472,10 @@ function onSolutionMediaInput() {
   setSolutionMedia(solutionMedia.value);
 }
 
+function onFinishMediaInput() {
+  setFinishMedia(finishMedia.value);
+}
+
 function onOptionImageInput(index) {
   const i = Number(index);
   if (!Number.isFinite(i) || i < 0 || i >= options.value.length) return;
@@ -1330,6 +1510,19 @@ async function onSolutionMediaFile(evt) {
     setSolutionMedia(result.url, result.medium);
     solutionType.value = solutionType.value === "text" ? "both" : "image";
     touchQuestionField("solutionMedia");
+  } catch (err) {
+    showToast(questionErrorText(err?.message), "error");
+  } finally {
+    if (evt?.target) evt.target.value = "";
+  }
+}
+
+async function onFinishMediaFile(evt) {
+  const file = evt?.target?.files?.[0];
+  if (!file) return;
+  try {
+    const result = await uploadMediaFile(file, "finish_media");
+    setFinishMedia(result.url, result.medium);
   } catch (err) {
     showToast(questionErrorText(err?.message), "error");
   } finally {
@@ -1579,6 +1772,7 @@ function setupSocket() {
     socket.emit("join_game", { token: props.token });
     socket.on("game_state", (s) => {
       game.value = s.game;
+      gameTitle.value = s.game?.title || "";
       score.value = s.score ? { ...s.score, rankings: s.score.rankings ? [...s.score.rankings] : [] } : null;
       if (s?.player?.nickname) playerName.value = s.player.nickname;
       isPublished.value = !!s.game?.isPublished;
@@ -1589,6 +1783,10 @@ function setupSocket() {
       autoRevealEnabled.value = s.game?.autoRevealEnabled !== false;
       autoRevealDelaySeconds.value = normalizeAutoRevealDelaySeconds(s.game?.autoRevealDelaySeconds);
       uiLanguage.value = String(s.game?.uiLanguage || "en");
+      setFinishMedia(
+        s.game?.finishMediaVideo || s.game?.finishMediaAudio || s.game?.finishMediaImage || "",
+        s.game?.finishMediaVideo ? "video" : s.game?.finishMediaAudio ? "audio" : s.game?.finishMediaImage ? "image" : ""
+      );
       setLanguage(uiLanguage.value).catch(() => {});
     });
 
@@ -1597,6 +1795,7 @@ function setupSocket() {
         const { data } = await api.get(`/state/${props.token}`);
         score.value = data.score ? { ...data.score, rankings: data.score.rankings ? [...data.score.rankings] : [] } : null;
         game.value = data.game;
+        gameTitle.value = data.game?.title || "";
         isPublished.value = !!data.game?.isPublished;
         showScore.value = data.game?.showScore !== false;
         showQuizTitle.value = data.game?.showQuizTitle !== false;
@@ -1605,6 +1804,10 @@ function setupSocket() {
         autoRevealEnabled.value = data.game?.autoRevealEnabled !== false;
         autoRevealDelaySeconds.value = normalizeAutoRevealDelaySeconds(data.game?.autoRevealDelaySeconds);
         uiLanguage.value = String(data.game?.uiLanguage || "en");
+        setFinishMedia(
+          data.game?.finishMediaVideo || data.game?.finishMediaAudio || data.game?.finishMediaImage || "",
+          data.game?.finishMediaVideo ? "video" : data.game?.finishMediaAudio ? "audio" : data.game?.finishMediaImage ? "image" : ""
+        );
         setLanguage(uiLanguage.value).catch(() => {});
       } catch {}
     });

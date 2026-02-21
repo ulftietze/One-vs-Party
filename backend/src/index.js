@@ -53,6 +53,7 @@ const DEFAULT_AUTO_REVEAL_DELAY_SECONDS = Math.max(1, Math.round(AUTO_REVEAL_DEL
 const MIN_AUTO_REVEAL_DELAY_SECONDS = 1;
 const MAX_AUTO_REVEAL_DELAY_SECONDS = 60;
 const QUESTION_PACKAGE_VERSION = 1;
+const FULL_GAME_EXPORT_VERSION = 1;
 
 process.on("unhandledRejection", (reason) => {
   logCompactError("unhandled rejection", reason);
@@ -188,6 +189,16 @@ function normalizeGuestThresholdPercent(raw) {
   const parsed = Number(raw);
   if (!Number.isFinite(parsed)) return 50;
   return Math.max(0, Math.min(100, Math.round(parsed)));
+}
+
+function normalizeGuestCorrectRule(raw) {
+  const value = String(raw || "").trim().toLowerCase();
+  return value === "plurality" ? "plurality" : "threshold";
+}
+
+function normalizeGameTitle(raw, fallback = "Quiz") {
+  const title = String(raw || "").trim().slice(0, 200);
+  return title || fallback;
 }
 
 function autoRevealDelayMsForGame(game) {
@@ -494,6 +505,10 @@ function mediaKindConfig(rawKind) {
     solution_audio: { group: "solution", medium: "audio" },
     solution_video: { group: "solution", medium: "video" },
     solution_media: { group: "solution", medium: "any" },
+    finish_image: { group: "finish", medium: "image" },
+    finish_audio: { group: "finish", medium: "audio" },
+    finish_video: { group: "finish", medium: "video" },
+    finish_media: { group: "finish", medium: "any" },
     option_image: { group: "option", medium: "image" }
   };
   return map[kind] ? { kind, ...map[kind] } : null;
@@ -664,6 +679,15 @@ function questionMediaRefs(q) {
   return refs.filter(ref => ref.startsWith("/media/"));
 }
 
+function gameFinishMediaRefs(game) {
+  const refs = [
+    game?.finishMediaImage,
+    game?.finishMediaAudio,
+    game?.finishMediaVideo
+  ].map(x => String(x || "").trim()).filter(Boolean);
+  return refs.filter(ref => ref.startsWith("/media/"));
+}
+
 async function cleanupOrphanMediaForGame(gameId) {
   const id = Number(gameId || 0);
   if (!Number.isFinite(id) || id <= 0) return;
@@ -678,6 +702,10 @@ async function cleanupOrphanMediaForGame(gameId) {
   for (const q of questions) {
     for (const ref of questionMediaRefs(q)) keep.add(ref);
   }
+  const game = await models.Game.findByPk(id, {
+    attributes: ["finishMediaImage", "finishMediaAudio", "finishMediaVideo"]
+  });
+  for (const ref of gameFinishMediaRefs(game)) keep.add(ref);
 
   const files = await listFilesRecursive(gameMediaDir);
   for (const abs of files) {
@@ -1044,6 +1072,7 @@ async function questionToPackageQuestion(q) {
     allowMultiple: !!q.allowMultiple,
     blockLabel: normalizeBlockLabel(q.blockLabel || "General"),
     guestCorrectThresholdPercent: normalizeGuestThresholdPercent(q.guestCorrectThresholdPercent),
+    guestCorrectRule: normalizeGuestCorrectRule(q.guestCorrectRule),
     promptMedia: promptVideo || promptAudio || promptImage || "",
     promptImage,
     promptAudio,
@@ -1082,6 +1111,7 @@ async function normalizedPayloadToPackageQuestion(q) {
     allowMultiple: !!q.allowMultiple,
     blockLabel: normalizeBlockLabel(q.blockLabel || "General"),
     guestCorrectThresholdPercent: normalizeGuestThresholdPercent(q.guestCorrectThresholdPercent),
+    guestCorrectRule: normalizeGuestCorrectRule(q.guestCorrectRule),
     promptMedia: promptVideo || promptAudio || promptImage || "",
     promptImage,
     promptAudio,
@@ -1108,6 +1138,62 @@ async function exportQuestionsForGame(gameId) {
   return out;
 }
 
+async function exportFullGamePayload(gameId) {
+  const game = await models.Game.findByPk(gameId);
+  if (!game) return null;
+  const full = await loadGameFull(models, gameId);
+  const questions = await exportQuestionsForGame(gameId);
+  return {
+    format: "quizduell.full_game",
+    version: FULL_GAME_EXPORT_VERSION,
+    exportedAt: new Date().toISOString(),
+    game: {
+      title: normalizeGameTitle(game.title, "Quiz"),
+      playerName: String(full?.Player?.nickname || "Player").trim().slice(0, 80) || "Player",
+      uiLanguage: normalizeUiLanguage(game.uiLanguage || "en"),
+      isPublished: !!game.isPublished,
+      showScore: game.showScore !== false,
+      showQuizTitle: game.showQuizTitle !== false,
+      showParticipantMedia: game.showParticipantMedia !== false,
+      showTopPlayers: game.showTopPlayers !== false,
+      autoRevealEnabled: game.autoRevealEnabled !== false,
+      autoRevealDelaySeconds: normalizeAutoRevealDelaySeconds(game.autoRevealDelaySeconds),
+      guestWinText: String(game.guestWinText || ""),
+      playerWinText: String(game.playerWinText || ""),
+      tieWinText: String(game.tieWinText || ""),
+      finishMediaImage: await mediaRefToEmbeddedDataUrl(game.finishMediaImage || ""),
+      finishMediaAudio: await mediaRefToEmbeddedDataUrl(game.finishMediaAudio || ""),
+      finishMediaVideo: await mediaRefToEmbeddedDataUrl(game.finishMediaVideo || "")
+    },
+    questions
+  };
+}
+
+function parseImportedFullGamePayload(raw) {
+  const source = raw || {};
+  const sourceGame = source?.game || {};
+  const sourceQuestions = Array.isArray(source?.questions) ? source.questions : [];
+  return {
+    title: normalizeGameTitle(sourceGame?.title, "Imported quiz"),
+    playerName: String(sourceGame?.playerName || "Player").trim().slice(0, 80) || "Player",
+    uiLanguage: normalizeUiLanguage(sourceGame?.uiLanguage || "en"),
+    isPublished: !!sourceGame?.isPublished,
+    showScore: sourceGame?.showScore !== false,
+    showQuizTitle: sourceGame?.showQuizTitle !== false,
+    showParticipantMedia: sourceGame?.showParticipantMedia !== false,
+    showTopPlayers: sourceGame?.showTopPlayers !== false,
+    autoRevealEnabled: sourceGame?.autoRevealEnabled !== false,
+    autoRevealDelaySeconds: normalizeAutoRevealDelaySeconds(sourceGame?.autoRevealDelaySeconds),
+    guestWinText: String(sourceGame?.guestWinText || ""),
+    playerWinText: String(sourceGame?.playerWinText || ""),
+    tieWinText: String(sourceGame?.tieWinText || ""),
+    finishMediaImage: String(sourceGame?.finishMediaImage || ""),
+    finishMediaAudio: String(sourceGame?.finishMediaAudio || ""),
+    finishMediaVideo: String(sourceGame?.finishMediaVideo || ""),
+    questions: sourceQuestions
+  };
+}
+
 function csvEscape(val) {
   const s = String(val ?? "");
   if (!/[",\n\r]/.test(s)) return s;
@@ -1121,6 +1207,7 @@ function buildQuestionsCsv(questions) {
     "allowMultiple",
     "blockLabel",
     "guestCorrectThresholdPercent",
+    "guestCorrectRule",
     "estimateTarget",
     "estimateTolerance",
     "promptImage",
@@ -1142,6 +1229,7 @@ function buildQuestionsCsv(questions) {
       q.allowMultiple ? "1" : "0",
       q.blockLabel || "General",
       String(normalizeGuestThresholdPercent(q.guestCorrectThresholdPercent)),
+      normalizeGuestCorrectRule(q.guestCorrectRule),
       q.estimateTarget === null || q.estimateTarget === undefined ? "" : String(q.estimateTarget),
       q.estimateTolerance === null || q.estimateTolerance === undefined ? "0" : String(q.estimateTolerance),
       q.promptImage || "",
@@ -1259,6 +1347,7 @@ function parseQuestionsCsv(text) {
       allowMultiple,
       blockLabel: String(get("blockLabel", "General") || "General"),
       guestCorrectThresholdPercent: normalizeGuestThresholdPercent(get("guestCorrectThresholdPercent", "50")),
+      guestCorrectRule: normalizeGuestCorrectRule(get("guestCorrectRule", "threshold")),
       estimateTarget: Number.isFinite(estimateTarget) ? estimateTarget : null,
       estimateTolerance: Number.isFinite(estimateTolerance) ? estimateTolerance : 0,
       promptImage: String(get("promptImage", "") || ""),
@@ -1424,6 +1513,7 @@ async function insertQuestionsIntoGame(gameId, normalizedQuestions, { mode = "re
       promptAudio: q.promptAudio,
       promptVideo: q.promptVideo,
       guestCorrectThresholdPercent: normalizeGuestThresholdPercent(q.guestCorrectThresholdPercent),
+      guestCorrectRule: normalizeGuestCorrectRule(q.guestCorrectRule),
       estimateTarget: q.type === "estimate" ? q.estimateTarget : null,
       estimateTolerance: q.type === "estimate" ? q.estimateTolerance : 0,
       solutionType: q.solutionType,
@@ -1656,6 +1746,7 @@ function mapQuestionForSocket(question) {
     promptVideo: String(question.promptVideo || ""),
     estimateTolerance: Number(question.estimateTolerance || 0),
     guestCorrectThresholdPercent: normalizeGuestThresholdPercent(question.guestCorrectThresholdPercent),
+    guestCorrectRule: normalizeGuestCorrectRule(question.guestCorrectRule),
     solutionType: question.solutionType || "none",
     options: sortedOptions(question).map(o => ({ id: o.id, text: o.text, image: String(o.image || "") }))
   };
@@ -1879,6 +1970,9 @@ async function emitGameState(gameId) {
       guestWinText: game.guestWinText,
       playerWinText: game.playerWinText,
       tieWinText: game.tieWinText,
+      finishMediaImage: String(game.finishMediaImage || ""),
+      finishMediaAudio: String(game.finishMediaAudio || ""),
+      finishMediaVideo: String(game.finishMediaVideo || ""),
       showScore: game.showScore,
       showQuizTitle: game.showQuizTitle !== false,
       showParticipantMedia: game.showParticipantMedia !== false,
@@ -2052,6 +2146,63 @@ function normalizeMediaUrlRef(raw, { allowImageDataUrl = false } = {}) {
   return "";
 }
 
+function normalizeFinishMediaPayload(raw = {}) {
+  let finishMediaImage = normalizeMediaUrlRef(raw.finishMediaImage);
+  let finishMediaAudio = normalizeMediaUrlRef(raw.finishMediaAudio);
+  let finishMediaVideo = normalizeMediaUrlRef(raw.finishMediaVideo);
+  const finishMedia = normalizeMediaUrlRef(raw.finishMedia);
+  if (finishMedia) {
+    const medium = inferMediumFromMediaRef(finishMedia);
+    if (medium === "image") {
+      finishMediaImage = finishMedia;
+      finishMediaAudio = "";
+      finishMediaVideo = "";
+    } else if (medium === "audio") {
+      finishMediaImage = "";
+      finishMediaAudio = finishMedia;
+      finishMediaVideo = "";
+    } else if (medium === "video") {
+      finishMediaImage = "";
+      finishMediaAudio = "";
+      finishMediaVideo = finishMedia;
+    }
+  }
+  return {
+    finishMediaImage,
+    finishMediaAudio,
+    finishMediaVideo
+  };
+}
+
+async function normalizeImportedFinishMedia(raw = {}, gameId) {
+  const source = raw || {};
+  let finishMediaImage = await maybeImportDataUrlMedia(source.finishMediaImage, { gameId, kind: "finish_image" });
+  let finishMediaAudio = await maybeImportDataUrlMedia(source.finishMediaAudio, { gameId, kind: "finish_audio" });
+  let finishMediaVideo = await maybeImportDataUrlMedia(source.finishMediaVideo, { gameId, kind: "finish_video" });
+  const finishMedia = await maybeImportDataUrlMedia(source.finishMedia, { gameId, kind: "finish_media" });
+  if (finishMedia) {
+    const medium = inferMediumFromMediaRef(finishMedia);
+    if (medium === "image") {
+      finishMediaImage = finishMedia;
+      finishMediaAudio = "";
+      finishMediaVideo = "";
+    } else if (medium === "audio") {
+      finishMediaImage = "";
+      finishMediaAudio = finishMedia;
+      finishMediaVideo = "";
+    } else if (medium === "video") {
+      finishMediaImage = "";
+      finishMediaAudio = "";
+      finishMediaVideo = finishMedia;
+    }
+  }
+  return {
+    finishMediaImage: normalizeMediaUrlRef(finishMediaImage),
+    finishMediaAudio: normalizeMediaUrlRef(finishMediaAudio),
+    finishMediaVideo: normalizeMediaUrlRef(finishMediaVideo)
+  };
+}
+
 async function normalizeQuestionPayload(raw = {}) {
   const requestedType = normalizeQuestionType(raw.type);
   let type = requestedType;
@@ -2129,6 +2280,7 @@ async function normalizeQuestionPayload(raw = {}) {
     allowMultiple,
     blockLabel: normalizeBlockLabel(raw.blockLabel),
     guestCorrectThresholdPercent: normalizeGuestThresholdPercent(raw.guestCorrectThresholdPercent),
+    guestCorrectRule: normalizeGuestCorrectRule(raw.guestCorrectRule),
     promptImage,
     promptAudio,
     promptVideo,
@@ -2274,7 +2426,7 @@ app.post("/api/admin/:token/media", requireToken, uploadMedia.single("file"), as
 // Spiel erstellen (inkl. Player in DB)
 app.post("/api/games", requireMasterAdmin, async (req, res) => {
 
-  const title = (req.body?.title || "").trim() || "Quiz";
+  const title = normalizeGameTitle(req.body?.title, "Quiz");
   const playerName = (req.body?.playerName || "").trim().slice(0, 80) || "Player";
   const uiLanguage = normalizeUiLanguage(req.body?.uiLanguage || "en");
 
@@ -2381,6 +2533,26 @@ app.post("/api/admin/:token/wintexts", requireToken, async (req, res) => {
   res.json({ ok: true });
 });
 
+// Admin: Quiz-Titel ändern
+app.post("/api/admin/:token/title", requireToken, async (req, res) => {
+  if (req.link.type !== "admin") return res.status(403).json({ error: "forbidden" });
+  const title = normalizeGameTitle(req.body?.title, "");
+  if (!title) return res.status(400).json({ error: "invalid_title" });
+  await models.Game.update({ title }, { where: { id: req.game.id } });
+  await emitGameState(req.game.id);
+  return res.json({ ok: true });
+});
+
+// Admin: Abschluss-Medium für Ergebnisseite speichern
+app.post("/api/admin/:token/finish-media", requireToken, async (req, res) => {
+  if (req.link.type !== "admin") return res.status(403).json({ error: "forbidden" });
+  const media = normalizeFinishMediaPayload(req.body || {});
+  await models.Game.update(media, { where: { id: req.game.id } });
+  await cleanupOrphanMediaForGame(req.game.id);
+  await emitGameState(req.game.id);
+  return res.json({ ok: true });
+});
+
 // Startseite: veröffentlichte Spiele auflisten (inkl. Präsentations-Token)
 app.get("/api/public/games", async (req, res) => {
   const games = await models.Game.findAll({
@@ -2462,6 +2634,7 @@ app.get("/api/public/results/:token([A-Za-z0-9_-]+)", requireToken, async (req, 
 // Gast: persönlicher Ergebnis-Link + PNG abrufen
 app.get("/api/guest/:token/personal-share", requireToken, async (req, res) => {
   if (!["guest_live", "guest_async"].includes(String(req.link.type || ""))) return res.status(403).json({ error: "forbidden" });
+  if (req.game?.showTopPlayers === false) return res.status(403).json({ error: "personal_share_disabled" });
 
   const participantId = Number(req.query?.participantId || 0);
   if (!Number.isFinite(participantId) || participantId <= 0) return res.status(400).json({ error: "invalid_participant" });
@@ -2514,6 +2687,92 @@ app.get("/api/admin/master/games", requireMasterAdmin, async (req, res) => {
   });
 });
 
+app.get("/api/admin/master/games/:gameId/export", requireMasterAdmin, async (req, res) => {
+  const gameId = Number(req.params.gameId || 0);
+  if (!Number.isFinite(gameId) || gameId <= 0) return res.status(400).json({ error: "invalid_game_id" });
+  const payload = await exportFullGamePayload(gameId);
+  if (!payload) return res.status(404).json({ error: "game_not_found" });
+  const ts = new Date().toISOString().slice(0, 10);
+  const safeName = normalizePackageName(payload?.game?.title || "quizduell")
+    .replace(/[^a-zA-Z0-9_-]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 80) || "quizduell";
+  const raw = `${JSON.stringify(payload, null, 2)}\n`;
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="${safeName}_full_${ts}.json"`);
+  return res.send(raw);
+});
+
+app.post("/api/admin/master/games/import", requireMasterAdmin, uploadMedia.single("file"), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: "missing_file" });
+  let createdGameId = null;
+  try {
+    const raw = await fsp.readFile(req.file.path, "utf8");
+    let parsed = null;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return res.status(400).json({ error: "invalid_json" });
+    }
+
+    const meta = parseImportedFullGamePayload(parsed);
+    const { game, links } = await createGame(models, {
+      title: meta.title,
+      playerName: meta.playerName,
+      uiLanguage: meta.uiLanguage
+    });
+    createdGameId = game.id;
+
+    const finishMedia = await normalizeImportedFinishMedia({
+      finishMediaImage: meta.finishMediaImage,
+      finishMediaAudio: meta.finishMediaAudio,
+      finishMediaVideo: meta.finishMediaVideo
+    }, game.id);
+
+    await models.Game.update({
+      isPublished: !!meta.isPublished,
+      showScore: !!meta.showScore,
+      showQuizTitle: !!meta.showQuizTitle,
+      showParticipantMedia: !!meta.showParticipantMedia,
+      showTopPlayers: !!meta.showTopPlayers,
+      autoRevealEnabled: !!meta.autoRevealEnabled,
+      autoRevealDelaySeconds: normalizeAutoRevealDelaySeconds(meta.autoRevealDelaySeconds),
+      guestWinText: meta.guestWinText,
+      playerWinText: meta.playerWinText,
+      tieWinText: meta.tieWinText,
+      ...finishMedia
+    }, { where: { id: game.id } });
+
+    const normalizedQuestions = await normalizePackageQuestionsForInsert(meta.questions, game.id);
+    if (normalizedQuestions.length > 0) {
+      await insertQuestionsIntoGame(game.id, normalizedQuestions, { mode: "replace" });
+    } else {
+      await emitGameState(game.id);
+    }
+
+    const urls = publicLinks(publicBaseUrlFor(req), links);
+    return res.json({
+      ok: true,
+      imported: normalizedQuestions.length,
+      game: {
+        id: game.id,
+        title: meta.title,
+        uiLanguage: meta.uiLanguage
+      },
+      tokens: Object.fromEntries(Object.entries(links).map(([k, v]) => [k, v.token])),
+      urls
+    });
+  } catch (err) {
+    if (createdGameId) {
+      clearAutoRevealTimer(createdGameId);
+      await deleteGameWithDependencies(createdGameId).catch(() => {});
+    }
+    return res.status(400).json({ error: String(err?.message || "invalid_import") });
+  } finally {
+    await removeFileQuiet(req.file?.path);
+  }
+});
+
 app.delete("/api/admin/master/games/:gameId", requireMasterAdmin, async (req, res) => {
   const gameId = Number(req.params.gameId || 0);
   if (!Number.isFinite(gameId) || gameId <= 0) return res.status(400).json({ error: "invalid_game_id" });
@@ -2526,6 +2785,77 @@ app.delete("/api/admin/master/games/:gameId", requireMasterAdmin, async (req, re
   } catch (err) {
     logCompactError("delete game by master admin failed", err);
     return res.status(500).json({ error: "delete_game_failed" });
+  }
+});
+
+app.get("/api/admin/:token/full-export", requireToken, async (req, res) => {
+  if (req.link.type !== "admin") return res.status(403).json({ error: "forbidden" });
+  const payload = await exportFullGamePayload(req.game.id);
+  if (!payload) return res.status(404).json({ error: "game_not_found" });
+  const ts = new Date().toISOString().slice(0, 10);
+  const safeName = normalizePackageName(payload?.game?.title || "quizduell")
+    .replace(/[^a-zA-Z0-9_-]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 80) || "quizduell";
+  const raw = `${JSON.stringify(payload, null, 2)}\n`;
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="${safeName}_full_${ts}.json"`);
+  return res.send(raw);
+});
+
+app.post("/api/admin/:token/full-import", requireToken, uploadMedia.single("file"), async (req, res) => {
+  if (req.link.type !== "admin") {
+    await removeFileQuiet(req.file?.path);
+    return res.status(403).json({ error: "forbidden" });
+  }
+  if (req.game.status === "live") {
+    await removeFileQuiet(req.file?.path);
+    return res.status(409).json({ error: "game_live" });
+  }
+  if (!req.file) return res.status(400).json({ error: "missing_file" });
+  try {
+    const raw = await fsp.readFile(req.file.path, "utf8");
+    let parsed = null;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return res.status(400).json({ error: "invalid_json" });
+    }
+
+    const meta = parseImportedFullGamePayload(parsed);
+    const finishMedia = await normalizeImportedFinishMedia({
+      finishMediaImage: meta.finishMediaImage,
+      finishMediaAudio: meta.finishMediaAudio,
+      finishMediaVideo: meta.finishMediaVideo
+    }, req.game.id);
+    const game = await models.Game.findByPk(req.game.id);
+    if (!game) return res.status(404).json({ error: "game_not_found" });
+    await models.Game.update({
+      title: meta.title,
+      uiLanguage: meta.uiLanguage,
+      isPublished: !!meta.isPublished,
+      showScore: !!meta.showScore,
+      showQuizTitle: !!meta.showQuizTitle,
+      showParticipantMedia: !!meta.showParticipantMedia,
+      showTopPlayers: !!meta.showTopPlayers,
+      autoRevealEnabled: !!meta.autoRevealEnabled,
+      autoRevealDelaySeconds: normalizeAutoRevealDelaySeconds(meta.autoRevealDelaySeconds),
+      guestWinText: meta.guestWinText,
+      playerWinText: meta.playerWinText,
+      tieWinText: meta.tieWinText,
+      ...finishMedia
+    }, { where: { id: req.game.id } });
+    await models.Participant.update({
+      nickname: meta.playerName
+    }, { where: { id: game.PlayerId } });
+    clearAutoRevealTimer(req.game.id);
+    const normalizedQuestions = await normalizePackageQuestionsForInsert(meta.questions, req.game.id);
+    await insertQuestionsIntoGame(req.game.id, normalizedQuestions, { mode: "replace" });
+    return res.json({ ok: true, imported: normalizedQuestions.length });
+  } catch (err) {
+    return res.status(400).json({ error: String(err?.message || "invalid_import") });
+  } finally {
+    await removeFileQuiet(req.file?.path);
   }
 });
 
@@ -2708,6 +3038,7 @@ app.post("/api/admin/:token/questions", requireToken, async (req, res) => {
       promptAudio: payload.promptAudio,
       promptVideo: payload.promptVideo,
       guestCorrectThresholdPercent: normalizeGuestThresholdPercent(payload.guestCorrectThresholdPercent),
+      guestCorrectRule: normalizeGuestCorrectRule(payload.guestCorrectRule),
       estimateTarget: payload.type === "estimate" ? payload.estimateTarget : null,
       estimateTolerance: payload.type === "estimate" ? payload.estimateTolerance : 0,
       solutionType: payload.solutionType,
@@ -2759,6 +3090,7 @@ app.put("/api/admin/:token/questions/:questionId", requireToken, async (req, res
       promptAudio: payload.promptAudio,
       promptVideo: payload.promptVideo,
       guestCorrectThresholdPercent: normalizeGuestThresholdPercent(payload.guestCorrectThresholdPercent),
+      guestCorrectRule: normalizeGuestCorrectRule(payload.guestCorrectRule),
       estimateTarget: payload.type === "estimate" ? payload.estimateTarget : null,
       estimateTolerance: payload.type === "estimate" ? payload.estimateTolerance : 0,
       solutionType: payload.solutionType,

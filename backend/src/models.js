@@ -16,6 +16,10 @@ export function defineModels(sequelize) {
     guestWinText: { type: DataTypes.TEXT, allowNull: false, defaultValue: "" },
     playerWinText: { type: DataTypes.TEXT, allowNull: false, defaultValue: "" },
     tieWinText: { type: DataTypes.TEXT, allowNull: false, defaultValue: "" },
+    // Optionales Abschluss-Medium für Präsentations-Ergebnisseite
+    finishMediaImage: { type: DataTypes.TEXT("long"), allowNull: false, defaultValue: "" },
+    finishMediaAudio: { type: DataTypes.TEXT("long"), allowNull: false, defaultValue: "" },
+    finishMediaVideo: { type: DataTypes.TEXT("long"), allowNull: false, defaultValue: "" },
 
     // Wird beim Beenden gesetzt: "guests" | "player" | "tie" | null
     winner: { type: DataTypes.ENUM("guests", "player", "tie"), allowNull: true, defaultValue: null },
@@ -72,7 +76,9 @@ export function defineModels(sequelize) {
     solutionAudio: { type: DataTypes.TEXT("long"), allowNull: false, defaultValue: "" },
     solutionVideo: { type: DataTypes.TEXT("long"), allowNull: false, defaultValue: "" },
     // Ab welcher Quote korrekter Gästeantworten die Gäste-Frage als "korrekt" gilt
-    guestCorrectThresholdPercent: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 50 }
+    guestCorrectThresholdPercent: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 50 },
+    // Wie Team-Gäste bewertet werden: "threshold" (Quote) oder "plurality" (meiste Stimmen gewinnt)
+    guestCorrectRule: { type: DataTypes.ENUM("threshold", "plurality"), allowNull: false, defaultValue: "threshold" }
   });
 
   const Option = sequelize.define("Option", {

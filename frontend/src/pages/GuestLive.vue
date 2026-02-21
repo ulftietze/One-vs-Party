@@ -44,7 +44,7 @@
           </div>
         </div>
 
-        <div v-if="personalShare.url" style="margin-top:14px; padding:14px; border:1px solid #dbeafe; border-radius:14px; background:#eff6ff;">
+        <div v-if="state.game?.showTopPlayers !== false && personalShare.url" style="margin-top:14px; padding:14px; border:1px solid #dbeafe; border-radius:14px; background:#eff6ff;">
           <div style="font-weight:900; color:#1d4ed8; margin-bottom:8px;">Your personal result card</div>
           <div style="display:flex; gap:8px; flex-wrap:wrap; justify-content:center;">
             <button @click="copyPersonalShareLink"
@@ -122,6 +122,7 @@ if (!clientKey.value) {
 }
 
 const myRanking = computed(() => {
+  if (state.value.game?.showTopPlayers === false) return null;
   if (!participantId.value || !state.value.score?.rankings) return null;
   const rankings = state.value.score.rankings;
   const idx = rankings.findIndex(r => r.id === Number(participantId.value));
@@ -175,11 +176,15 @@ onMounted(async () => {
     const newQ = s.questions[s.game?.currentQuestionIndex ?? 0]?.id;
     if (prevQ !== newQ) hasAnswered.value = false;
 
-    if (s.game?.status === "finished" && participantId.value && !personalShareLoaded.value) {
+    if (s.game?.status === "finished" && s.game?.showTopPlayers !== false && participantId.value && !personalShareLoaded.value) {
       loadPersonalShare().catch(() => {});
     }
     if (s.game?.status !== "finished") {
       personalShareLoaded.value = false;
+      personalShare.value = { url: "", imageUrl: "" };
+      personalShareMsg.value = "";
+    } else if (s.game?.showTopPlayers === false) {
+      personalShareLoaded.value = true;
       personalShare.value = { url: "", imageUrl: "" };
       personalShareMsg.value = "";
     }
@@ -234,6 +239,7 @@ async function submit(optionIds) {
 }
 
 async function loadPersonalShare() {
+  if (state.value.game?.showTopPlayers === false) return;
   if (!participantId.value) return;
   const { data } = await api.get(`/guest/${props.token}/personal-share`, {
     params: { participantId: participantId.value }
