@@ -302,19 +302,26 @@
                      style="width:100%; max-height:52vh; border-radius:10px; background:#000;"></video>
             </div>
 
-            <div v-if="showVoteChart"
-                 class="reveal-card"
-                 style="padding:16px; border-radius:14px; border:2px solid #004e96; background:#f0f7ff;">
-              <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
-                <div style="font-size:14px; font-weight:900; text-transform:uppercase; color:#004e96; letter-spacing:0.05em;">
-                  Answer stats
-                </div>
-                <div v-if="!hasRevealedSolution" style="font-size:14px; font-weight:700; color:#1f2937;">
-                  No solution configured for this question.
-                </div>
+            <div v-if="showMiniVoteChart" class="stats-mini-dock">
+              <button @click="statsModalOpen = true" class="stats-mini-toggle">
+                <span>Statistik</span>
+                <span style="font-size:13px; line-height:1;">▲</span>
+              </button>
+              <div class="stats-mini-body">
+                <GuestVoteBars
+                  :votes="effectiveVotes"
+                  :playerAnswer="revealedPlayerAnswer"
+                  :player-label="playerName"
+                  mode="mini"
+                  :max-items="3" />
               </div>
-              <GuestVoteBars :votes="guestVotes" :playerAnswer="revealedPlayerAnswer" :player-label="playerName" :compact="false" />
             </div>
+
+            <button v-if="showStatsLauncher"
+                    @click="statsModalOpen = true"
+                    class="stats-launcher-btn">
+              Statistik öffnen
+            </button>
           </div>
         </div>
       </div>
@@ -327,6 +334,20 @@
       </div>
     </transition>
 
+    <transition name="stats-modal">
+      <div v-if="showVoteChart && statsModalOpen" class="stats-modal-backdrop" @click.self="statsModalOpen = false">
+        <div class="stats-modal-panel">
+          <div class="stats-modal-head">
+            <div style="font-size:16px; font-weight:900; text-transform:uppercase; color:#004e96; letter-spacing:0.05em;">
+              Answer stats
+            </div>
+            <button @click="statsModalOpen = false" class="stats-modal-close">✕</button>
+          </div>
+          <GuestVoteBars :votes="effectiveVotes" :playerAnswer="revealedPlayerAnswer" :player-label="playerName" mode="vertical" variant="modal" />
+        </div>
+      </div>
+    </transition>
+
     <div v-if="fullscreenImageSrc" class="image-viewer" @click.self="closeFullscreenImage">
       <button @click="closeFullscreenImage" class="image-viewer-close">×</button>
       <img :src="fullscreenImageSrc" alt="Fullscreen" class="image-viewer-img" />
@@ -335,7 +356,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import api from "../api.js";
 import { getSocket } from "../socket.js";
 import ScoreBars from "../components/ScoreBars.vue";
@@ -349,6 +370,7 @@ const socket = getSocket();
 const state = ref({ game: null, questions: [], score: { player: 0, guests: 0 }, player: null });
 const { t } = useI18n();
 const guestVotes = ref([]);
+const previewVotes = ref(null);
 const revealedPlayerAnswer = ref([]);
 const revealedSolution = ref({ type: "none", text: "", image: "", audio: "", video: "" });
 const revealedQuestionType = ref("choice");
@@ -359,6 +381,7 @@ const shareMessage = ref("");
 const showIntermission = ref(false);
 const autoRevealPending = ref(false);
 const fullscreenImageSrc = ref("");
+const statsModalOpen = ref(false);
 let shareLoadedForGameId = null;
 
 const showSidebar = computed(() => state.value.game?.showScore !== false);
@@ -462,6 +485,14 @@ const optionById = computed(() => {
     image: o.image || ""
   }]));
 });
+const choiceOptions = computed(() => {
+  return (currentQuestion.value?.options || []).map((o, idx) => ({
+    id: o.id,
+    text: String(o?.text || `Option ${idx + 1}`),
+    image: String(o?.image || ""),
+    isCorrect: !!o?.isCorrect
+  }));
+});
 
 function seededRandom(seed) {
   let t = Number(seed || 1) + 0x6D2B79F5;
@@ -553,13 +584,16 @@ const estimateScale = computed(() => {
     bandWidth: Math.max(0.8, Math.abs(bandEndRaw - bandStartRaw))
   };
 });
+const effectiveVotes = computed(() => Array.isArray(previewVotes.value) ? previewVotes.value : guestVotes.value);
 const showVoteChart = computed(() => {
-  return !["estimate", "order"].includes(String(revealedQuestionType.value || "")) && guestVotes.value.length > 0;
+  return !["estimate", "order"].includes(String(revealedQuestionType.value || "")) && effectiveVotes.value.length > 0;
 });
 const hasRevealedSolution = computed(() => {
   const s = revealedSolution.value || {};
   return !!(String(s.text || "").trim() || s.image || s.audio || s.video);
 });
+const showMiniVoteChart = computed(() => showVoteChart.value && hasRevealedSolution.value && !statsModalOpen.value);
+const showStatsLauncher = computed(() => showVoteChart.value && !hasRevealedSolution.value && !statsModalOpen.value);
 
 const playerAnswered = ref(false);
 let lastQuestionId = null;
@@ -585,6 +619,106 @@ function closeFullscreenImage() {
   fullscreenImageSrc.value = "";
 }
 
+function sanitizeCount(value) {
+  const count = Number(value);
+  if (!Number.isFinite(count)) return 0;
+  return Math.max(0, Math.round(count));
+}
+
+function mapPreviewVotes(rawVotes) {
+  if (!Array.isArray(rawVotes)) return null;
+  const options = choiceOptions.value;
+  const fallback = guestVotes.value;
+  const source = options.length ? options : fallback;
+  return rawVotes.map((entry, idx) => {
+    const baseInput = (entry !== null && typeof entry === "object") ? entry : { count: entry };
+    const base = source.find(opt => String(opt?.id) === String(baseInput?.id)) || source[idx] || {};
+    const id = baseInput?.id ?? base?.id ?? `preview-${idx + 1}`;
+    return {
+      id,
+      text: String(baseInput?.text ?? base?.text ?? `Option ${idx + 1}`),
+      image: String(baseInput?.image ?? base?.image ?? ""),
+      count: sanitizeCount(baseInput?.count),
+      isCorrect: Boolean(baseInput?.isCorrect ?? base?.isCorrect)
+    };
+  });
+}
+
+function setPreviewVotes(rawVotes) {
+  previewVotes.value = mapPreviewVotes(rawVotes);
+  return effectiveVotes.value;
+}
+
+function setPreviewFromCounts(rawCounts) {
+  const counts = Array.isArray(rawCounts) ? rawCounts : [];
+  const options = choiceOptions.value;
+  const base = options.length ? options : guestVotes.value;
+  const size = Math.max(base.length, counts.length);
+  const entries = Array.from({ length: size }, (_, idx) => {
+    const option = base[idx] || {};
+    return {
+      id: option?.id ?? `preview-${idx + 1}`,
+      text: option?.text ?? `Option ${idx + 1}`,
+      image: option?.image ?? "",
+      count: sanitizeCount(counts[idx]),
+      isCorrect: !!option?.isCorrect
+    };
+  });
+  previewVotes.value = entries;
+  return effectiveVotes.value;
+}
+
+function setPreviewRandom(max = 40) {
+  const ceiling = Math.max(1, sanitizeCount(max));
+  const options = choiceOptions.value;
+  const base = options.length ? options : guestVotes.value;
+  const entries = base.map((option, idx) => ({
+    id: option?.id ?? `preview-${idx + 1}`,
+    text: option?.text ?? `Option ${idx + 1}`,
+    image: option?.image ?? "",
+    count: Math.floor(Math.random() * (ceiling + 1)),
+    isCorrect: !!option?.isCorrect
+  }));
+  previewVotes.value = entries;
+  return effectiveVotes.value;
+}
+
+function clearPreviewVotes() {
+  previewVotes.value = null;
+  return guestVotes.value;
+}
+
+function registerStatsPreviewApi() {
+  if (typeof window === "undefined") return;
+  window.__quizStatsPreview = {
+    help() {
+      return {
+        set: "set([{ id, count, text?, image?, isCorrect? }, ...])",
+        fromCounts: "fromCounts([12, 8, 4, 1])",
+        random: "random(40) // max count per option",
+        clear: "clear() // return to live backend votes"
+      };
+    },
+    set(votes) {
+      return setPreviewVotes(votes);
+    },
+    fromCounts(counts) {
+      return setPreviewFromCounts(counts);
+    },
+    random(max) {
+      return setPreviewRandom(max);
+    },
+    clear() {
+      return clearPreviewVotes();
+    }
+  };
+}
+
+function unregisterStatsPreviewApi() {
+  if (typeof window === "undefined") return;
+  if (window.__quizStatsPreview) delete window.__quizStatsPreview;
+}
+
 onMounted(async () => {
   const { data } = await api.get(`/state/${props.token}`);
   state.value.player = data.player;
@@ -608,16 +742,20 @@ onMounted(async () => {
     if (s.questions?.[s.game?.currentQuestionIndex ?? 0]?.id !== lastQuestionId) {
       playerAnswered.value = false;
       lastQuestionId = s.questions?.[s.game?.currentQuestionIndex ?? 0]?.id || null;
+      statsModalOpen.value = false;
+      previewVotes.value = null;
     }
     if (s?.progress && typeof s.progress.playerAnswered === "boolean") {
       playerAnswered.value = s.progress.playerAnswered;
     }
     if (s.game?.phase === "answering") {
+      previewVotes.value = null;
       guestVotes.value = [];
       revealedPlayerAnswer.value = [];
       revealedSolution.value = { type: "none", text: "", image: "", audio: "", video: "" };
       revealedQuestionType.value = String(currentQuestion.value?.type || "choice");
       revealedEstimate.value = null;
+      statsModalOpen.value = false;
       if (!autoRevealPending.value) showIntermission.value = false;
     } else if (s.game?.phase === "revealed") {
       clearIntermission();
@@ -629,23 +767,31 @@ onMounted(async () => {
   });
 
   socket.on("reveal", ({ guestVotes: gv, playerAnswer, solution, questionType, estimate }) => {
+    statsModalOpen.value = false;
+    previewVotes.value = null;
     revealedPlayerAnswer.value = (playerAnswer || []).map(String);
-    revealedSolution.value = {
+    const nextSolution = {
       type: solution?.type || "none",
       text: solution?.text || "",
       image: solution?.image || "",
       audio: solution?.audio || "",
       video: solution?.video || ""
     };
-    revealedQuestionType.value = String(questionType || currentQuestion.value?.type || "choice");
+    revealedSolution.value = nextSolution;
+    const nextType = String(questionType || currentQuestion.value?.type || "choice");
+    revealedQuestionType.value = nextType;
     revealedEstimate.value = estimate || null;
-    guestVotes.value = (gv || []).map(v => ({
+    const mappedVotes = (gv || []).map(v => ({
       id: v.id,
       text: v.text,
       image: v.image || "",
       count: Number(v.count || 0),
       isCorrect: !!v.isCorrect
     }));
+    guestVotes.value = mappedVotes;
+    const hasSolution = !!(String(nextSolution.text || "").trim() || nextSolution.image || nextSolution.audio || nextSolution.video);
+    const supportsVotes = !["estimate", "order"].includes(nextType);
+    statsModalOpen.value = supportsVotes && mappedVotes.length > 0 && !hasSolution;
   });
 
   socket.on("answer_received", ({ participantId, questionId }) => {
@@ -657,11 +803,21 @@ onMounted(async () => {
   socket.on("auto_reveal_countdown", () => {
     startIntermission();
   });
+
+  registerStatsPreviewApi();
 });
 
 onBeforeUnmount(() => {
   clearIntermission();
   closeFullscreenImage();
+  statsModalOpen.value = false;
+  unregisterStatsPreviewApi();
+  if (typeof document !== "undefined") document.body.style.overflow = "";
+});
+
+watch(statsModalOpen, (open) => {
+  if (typeof document === "undefined") return;
+  document.body.style.overflow = open ? "hidden" : "";
 });
 
 function formatNumber(v) {
@@ -711,6 +867,7 @@ async function reveal() {
 async function next() {
   clearIntermission();
   closeFullscreenImage();
+  statsModalOpen.value = false;
   playerAnswered.value = false;
   await api.post(`/present/${props.token}/next`);
 }
@@ -887,6 +1044,104 @@ async function next() {
 .present-option-text {
   overflow-wrap: anywhere;
   line-height: 1.25;
+}
+
+.stats-mini-dock {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: min(320px, 72%);
+  border: 1px solid #bfd4ed;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 14px 26px rgba(15, 23, 42, 0.16);
+  overflow: hidden;
+  animation: panel-enter 240ms ease-out;
+}
+
+.stats-mini-toggle {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border: 0;
+  border-bottom: 1px solid #dbeafe;
+  background: #eff6ff;
+  color: #003968;
+  font-size: 13px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.stats-mini-body {
+  padding: 7px;
+}
+
+.stats-launcher-btn {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid #cbd5e1;
+  background: rgba(255, 255, 255, 0.96);
+  color: #003968;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.stats-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 140;
+  background: rgba(2, 6, 23, 0.42);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+}
+
+.stats-modal-panel {
+  width: min(1120px, 96vw);
+  max-height: 92vh;
+  border-radius: 16px;
+  border: 2px solid #93c5fd;
+  background: #f8fbff;
+  box-shadow: 0 20px 40px rgba(2, 24, 43, 0.3);
+  padding: 12px 12px 10px;
+  display: grid;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.stats-modal-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.stats-modal-close {
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  color: #0f172a;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.stats-modal-enter-active,
+.stats-modal-leave-active {
+  transition: opacity 180ms ease;
+}
+
+.stats-modal-enter-from,
+.stats-modal-leave-to {
+  opacity: 0;
 }
 
 .progress-card {
@@ -1149,6 +1404,16 @@ async function next() {
   .present-option-media {
     width: 100%;
     height: 190px;
+  }
+
+  .stats-mini-dock {
+    position: static;
+    width: 100%;
+  }
+
+  .stats-launcher-btn {
+    position: static;
+    width: 100%;
   }
 }
 
