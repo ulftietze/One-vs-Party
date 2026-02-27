@@ -130,6 +130,45 @@ function selectionFor(questionId) {
   return answersByQuestion.value[String(questionId)] || [];
 }
 
+function normalizeQuestion(question) {
+  const source = question || {};
+  const optionsSource = Array.isArray(source.options)
+    ? source.options
+    : Array.isArray(source.Options)
+      ? source.Options
+      : [];
+  return {
+    id: source.id,
+    text: String(source.text || ""),
+    type: String(source.type || "choice"),
+    allowMultiple: !!source.allowMultiple,
+    promptImage: String(source.promptImage || ""),
+    promptAudio: String(source.promptAudio || ""),
+    promptVideo: String(source.promptVideo || ""),
+    options: optionsSource.map((o) => ({
+      id: o?.id,
+      text: String(o?.text || ""),
+      image: String(o?.image || "")
+    }))
+  };
+}
+
+function normalizeStatePayload(raw) {
+  const source = raw || {};
+  return {
+    game: source.game || null,
+    player: source.player || null,
+    questions: Array.isArray(source.questions) ? source.questions.map(normalizeQuestion) : [],
+    score: source.score || { player: 0, guests: 0 },
+    progress: source.progress || {
+      guestAnsweredCount: 0,
+      guestTotal: Number(source?.game?.guestCount || 0),
+      playerAnswered: false,
+      playerSelection: []
+    }
+  };
+}
+
 const myRanking = computed(() => {
   if (state.value.game?.showTopPlayers === false) return null;
   if (!participantId.value || !state.value.score?.rankings) return null;
@@ -154,12 +193,16 @@ const myRanking = computed(() => {
 
 onMounted(async () => {
   const initial = await api.get(`/state/${props.token}`).catch(() => ({ data: null }));
+  if (initial?.data) {
+    state.value = normalizeStatePayload(initial.data);
+  }
   if (initial?.data?.game?.uiLanguage) {
     await setLanguage(initial.data.game.uiLanguage);
   }
 
   socket.emit("join_game", { token: props.token });
   socket.on("game_state", (s) => {
+    const nextState = normalizeStatePayload(s);
     if (s?.game?.uiLanguage) {
       setLanguage(s.game.uiLanguage).catch(() => {});
     }
@@ -176,17 +219,7 @@ onMounted(async () => {
       }
     }
 
-    state.value = s;
-    state.value.questions = (s.questions || []).map(q => ({
-      id: q.id,
-      text: q.text,
-      type: q.type || "choice",
-      allowMultiple: q.allowMultiple,
-      promptImage: q.promptImage || "",
-      promptAudio: q.promptAudio || "",
-      promptVideo: q.promptVideo || "",
-      options: q.options
-    }));
+    state.value = nextState;
 
     if (s.game?.status === "finished" && s.game?.showTopPlayers !== false && participantId.value && !personalShareLoaded.value) {
       loadPersonalShare().catch(() => {});

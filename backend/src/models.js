@@ -79,6 +79,10 @@ export function defineModels(sequelize) {
     guestCorrectThresholdPercent: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 50 },
     // Wie Team-Gäste bewertet werden: "threshold" (Quote) oder "plurality" (meiste Stimmen gewinnt)
     guestCorrectRule: { type: DataTypes.ENUM("threshold", "plurality"), allowNull: false, defaultValue: "threshold" }
+  }, {
+    indexes: [
+      { fields: ["GameId", "sortOrder", "id"] }
+    ]
   });
 
   const Option = sequelize.define("Option", {
@@ -87,6 +91,10 @@ export function defineModels(sequelize) {
     image: { type: DataTypes.TEXT("long"), allowNull: false, defaultValue: "" },
     isCorrect: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
     orderIndex: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 }
+  }, {
+    indexes: [
+      { fields: ["QuestionId", "orderIndex", "id"] }
+    ]
   });
 
   const Participant = sequelize.define("Participant", {
@@ -95,12 +103,24 @@ export function defineModels(sequelize) {
     nickname: { type: DataTypes.STRING(80), allowNull: false },
     // Verknüpft einen Gast optional mit einem Client/Device für sicheres Re-Join
     clientKey: { type: DataTypes.STRING(80), allowNull: true }
+  }, {
+    indexes: [
+      { fields: ["GameId", "kind"] },
+      { fields: ["GameId", "id"] },
+      { fields: ["clientKey"] }
+    ]
   });
 
   const Answer = sequelize.define("Answer", {
     id: { type: DataTypes.INTEGER, autoIncrement: true, primaryKey: true },
     // Für Multiple: kommaseparierte OptionIds
     optionIds: { type: DataTypes.STRING(200), allowNull: false }
+  }, {
+    indexes: [
+      { fields: ["QuestionId"] },
+      { fields: ["QuestionId", "ParticipantId"] },
+      { fields: ["ParticipantId", "QuestionId"] }
+    ]
   });
 
   const AdminSession = sequelize.define("AdminSession", {

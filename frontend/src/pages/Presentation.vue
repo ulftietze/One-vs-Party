@@ -435,6 +435,50 @@ const guestProgress = computed(() => {
 });
 const guestPercentLabel = computed(() => `${Math.round((guestProgress.value.pct || 0) * 100)}%`);
 
+function normalizeQuestion(question) {
+  const source = question || {};
+  const optionsSource = Array.isArray(source.options)
+    ? source.options
+    : Array.isArray(source.Options)
+      ? source.Options
+      : [];
+  return {
+    id: source.id,
+    text: String(source.text || ""),
+    type: String(source.type || "choice"),
+    allowMultiple: !!source.allowMultiple,
+    blockLabel: String(source.blockLabel || "General"),
+    promptImage: String(source.promptImage || ""),
+    promptAudio: String(source.promptAudio || ""),
+    promptVideo: String(source.promptVideo || ""),
+    estimateTolerance: Number(source.estimateTolerance || 0),
+    guestCorrectThresholdPercent: Number(source.guestCorrectThresholdPercent ?? 50),
+    guestCorrectRule: String(source.guestCorrectRule || "threshold"),
+    solutionType: String(source.solutionType || "none"),
+    options: optionsSource.map((o) => ({
+      id: o?.id,
+      text: String(o?.text || ""),
+      image: String(o?.image || "")
+    }))
+  };
+}
+
+function normalizeStatePayload(raw) {
+  const source = raw || {};
+  return {
+    game: source.game || null,
+    player: source.player || null,
+    questions: Array.isArray(source.questions) ? source.questions.map(normalizeQuestion) : [],
+    score: source.score || { player: 0, guests: 0 },
+    progress: source.progress || {
+      guestAnsweredCount: 0,
+      guestTotal: Number(source?.game?.guestCount || 0),
+      playerAnswered: false,
+      playerSelection: []
+    }
+  };
+}
+
 function blendColor(a, b, t) {
   const m = Math.max(0, Math.min(1, t));
   const r = Math.round(a[0] + (b[0] - a[0]) * m);
@@ -753,7 +797,7 @@ function unregisterStatsPreviewApi() {
 
 onMounted(async () => {
   const { data } = await api.get(`/state/${props.token}`);
-  state.value.player = data.player;
+  state.value = normalizeStatePayload(data);
   if (data?.game?.uiLanguage) {
     await setLanguage(data.game.uiLanguage);
   }
@@ -761,26 +805,27 @@ onMounted(async () => {
   socket.emit("join_game", { token: props.token });
 
   socket.on("game_state", (s) => {
+    const nextState = normalizeStatePayload(s);
     if (s?.game?.uiLanguage) {
       setLanguage(s.game.uiLanguage).catch(() => {});
     }
-    state.value = s;
-    if (s.game?.status !== "finished") {
+    state.value = nextState;
+    if (nextState.game?.status !== "finished") {
       shareLink.value = "";
       shareImageUrl.value = "";
       shareMessage.value = "";
       shareLoadedForGameId = null;
     }
-    if (s.questions?.[s.game?.currentQuestionIndex ?? 0]?.id !== lastQuestionId) {
+    if (nextState.questions?.[nextState.game?.currentQuestionIndex ?? 0]?.id !== lastQuestionId) {
       playerAnswered.value = false;
-      lastQuestionId = s.questions?.[s.game?.currentQuestionIndex ?? 0]?.id || null;
+      lastQuestionId = nextState.questions?.[nextState.game?.currentQuestionIndex ?? 0]?.id || null;
       statsModalOpen.value = false;
       previewVotes.value = null;
     }
-    if (s?.progress && typeof s.progress.playerAnswered === "boolean") {
-      playerAnswered.value = s.progress.playerAnswered;
+    if (nextState?.progress && typeof nextState.progress.playerAnswered === "boolean") {
+      playerAnswered.value = nextState.progress.playerAnswered;
     }
-    if (s.game?.phase === "answering") {
+    if (nextState.game?.phase === "answering") {
       previewVotes.value = null;
       guestVotes.value = [];
       revealedPlayerAnswer.value = [];
@@ -789,13 +834,13 @@ onMounted(async () => {
       revealedEstimate.value = null;
       statsModalOpen.value = false;
       if (!autoRevealPending.value) showIntermission.value = false;
-    } else if (s.game?.phase === "revealed") {
+    } else if (nextState.game?.phase === "revealed") {
       clearIntermission();
     }
-    if (s.game?.status === "finished" && s.game?.id && shareLoadedForGameId !== s.game.id) {
+    if (nextState.game?.status === "finished" && nextState.game?.id && shareLoadedForGameId !== nextState.game.id) {
       loadShareInfo();
     }
-    if (s.game?.status !== "live") clearIntermission();
+    if (nextState.game?.status !== "live") clearIntermission();
   });
 
   socket.on("reveal", ({ guestVotes: gv, playerAnswer, solution, questionType, estimate }) => {

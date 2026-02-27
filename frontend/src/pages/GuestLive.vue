@@ -111,6 +111,50 @@ const answerHint = computed(() => {
   return "";
 });
 
+function normalizeQuestion(question) {
+  const source = question || {};
+  const optionsSource = Array.isArray(source.options)
+    ? source.options
+    : Array.isArray(source.Options)
+      ? source.Options
+      : [];
+  return {
+    id: source.id,
+    text: String(source.text || ""),
+    type: String(source.type || "choice"),
+    allowMultiple: !!source.allowMultiple,
+    blockLabel: String(source.blockLabel || "General"),
+    promptImage: String(source.promptImage || ""),
+    promptAudio: String(source.promptAudio || ""),
+    promptVideo: String(source.promptVideo || ""),
+    estimateTolerance: Number(source.estimateTolerance || 0),
+    guestCorrectThresholdPercent: Number(source.guestCorrectThresholdPercent ?? 50),
+    guestCorrectRule: String(source.guestCorrectRule || "threshold"),
+    solutionType: String(source.solutionType || "none"),
+    options: optionsSource.map((o) => ({
+      id: o?.id,
+      text: String(o?.text || ""),
+      image: String(o?.image || "")
+    }))
+  };
+}
+
+function normalizeStatePayload(raw) {
+  const source = raw || {};
+  return {
+    game: source.game || null,
+    player: source.player || null,
+    questions: Array.isArray(source.questions) ? source.questions.map(normalizeQuestion) : [],
+    score: source.score || { player: 0, guests: 0 },
+    progress: source.progress || {
+      guestAnsweredCount: 0,
+      guestTotal: Number(source?.game?.guestCount || 0),
+      playerAnswered: false,
+      playerSelection: []
+    }
+  };
+}
+
 function makeClientKey() {
   if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
   return `g_${Date.now()}_${Math.random().toString(36).slice(2, 12)}`;
@@ -147,6 +191,9 @@ const myRanking = computed(() => {
 
 onMounted(async () => {
   const initial = await api.get(`/state/${props.token}`).catch(() => ({ data: null }));
+  if (initial?.data) {
+    state.value = normalizeStatePayload(initial.data);
+  }
   if (initial?.data?.game?.uiLanguage) {
     await setLanguage(initial.data.game.uiLanguage);
   }
@@ -154,6 +201,7 @@ onMounted(async () => {
   socket.emit("join_game", { token: props.token });
 
   socket.on("game_state", (s) => {
+    const nextState = normalizeStatePayload(s);
     if (s?.game?.uiLanguage) {
       setLanguage(s.game.uiLanguage).catch(() => {});
     }
@@ -172,8 +220,8 @@ onMounted(async () => {
       }
     }
 
-    state.value = s;
-    const newQ = s.questions[s.game?.currentQuestionIndex ?? 0]?.id;
+    state.value = nextState;
+    const newQ = nextState.questions[nextState.game?.currentQuestionIndex ?? 0]?.id;
     if (prevQ !== newQ) hasAnswered.value = false;
 
     if (s.game?.status === "finished" && s.game?.showTopPlayers !== false && participantId.value && !personalShareLoaded.value) {

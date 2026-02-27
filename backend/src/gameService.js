@@ -188,7 +188,7 @@ export async function loadGameFull(models, gameId) {
   });
 }
 
-export async function computeScore(models, gameId, { uptoIndex = null } = {}) {
+export async function computeScore(models, gameId, { uptoIndex = null, rankingLimit = null } = {}) {
   const full = await loadGameFull(models, gameId);
   if (!full) return { player: 0, guests: 0, playerName: "Player", rankings: [] };
 
@@ -242,11 +242,16 @@ export async function computeScore(models, gameId, { uptoIndex = null } = {}) {
     guestTeamScore += pointsForQuestion(q, teamResult.isCorrect);
   }
 
-  const rankings = guests.map(g => ({
+  const rankingsAll = guests.map(g => ({
     id: g.id,
     nickname: g.nickname,
     score: scoreFor(g, questions)
   })).sort((a, b) => b.score - a.score || a.nickname.localeCompare(b.nickname));
+
+  const limit = Number(rankingLimit);
+  const rankings = Number.isFinite(limit) && limit > 0
+    ? rankingsAll.slice(0, limit)
+    : rankingsAll;
 
   return {
     player: playerScore,

@@ -106,6 +106,45 @@ If the stack is already running:
 docker compose --profile e2e run --rm e2e
 ```
 
+## Load Test (no local npm install)
+Run with defaults (short command):
+```bash
+bash loadtest/run.sh
+```
+
+Defaults are read from `loadtest/run.sh`:
+- URL: `http://host.docker.internal:8080`
+- Guest counts: `100,250,500,1000`
+- Questions: `10`
+- Connect concurrency: `15`
+- Socket timeout: `45000`
+- WS retries: `5`
+- Min connected ratio: `1.0`
+- Report dir: `loadtest/reports`
+- `ADMIN_TOKEN` is read from environment or `.env`
+
+Reports are saved locally by default in `loadtest/reports/`:
+- `*.json` full raw data
+- `*.html` visual report (best for quick review)
+- `*.md` text summary
+- `*.runs.csv` run-to-run comparison
+- `*.combined.csv` operation metrics
+
+Open the latest HTML report:
+```bash
+open "$(ls -t loadtest/reports/*.html | head -n 1)"
+```
+
+Optional: custom report folder/prefix:
+```bash
+bash loadtest/run.sh --report-prefix live-check
+```
+
+For larger guest counts (250/500+), tune websocket connect behavior:
+```bash
+bash loadtest/run.sh --guest-counts 250,500 --connect-concurrency 12 --socket-timeout-ms 60000 --ws-connect-retries 6 --ws-retry-delay-ms 500
+```
+
 ## Notes
 - Do not commit secrets (`.env` stays local).
 - Replace `ADMIN_TOKEN` and `APP_SECRET` before deployment.

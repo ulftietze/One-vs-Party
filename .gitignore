@@ -3,3 +3,4 @@
 .idea/
 frontend/playwright-report/
 frontend/test-results/
+loadtest/reports/

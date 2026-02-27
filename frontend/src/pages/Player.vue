@@ -64,6 +64,45 @@ const answerHint = computed(() => {
   return "";
 });
 
+function normalizeQuestion(question) {
+  const source = question || {};
+  const optionsSource = Array.isArray(source.options)
+    ? source.options
+    : Array.isArray(source.Options)
+      ? source.Options
+      : [];
+  return {
+    id: source.id,
+    text: String(source.text || ""),
+    type: String(source.type || "choice"),
+    allowMultiple: !!source.allowMultiple,
+    promptImage: String(source.promptImage || ""),
+    promptAudio: String(source.promptAudio || ""),
+    promptVideo: String(source.promptVideo || ""),
+    options: optionsSource.map((o) => ({
+      id: o?.id,
+      text: String(o?.text || ""),
+      image: String(o?.image || "")
+    }))
+  };
+}
+
+function normalizeStatePayload(raw) {
+  const source = raw || {};
+  return {
+    game: source.game || null,
+    player: source.player || null,
+    questions: Array.isArray(source.questions) ? source.questions.map(normalizeQuestion) : [],
+    score: source.score || { player: 0, guests: 0 },
+    progress: source.progress || {
+      guestAnsweredCount: 0,
+      guestTotal: Number(source?.game?.guestCount || 0),
+      playerAnswered: false,
+      playerSelection: []
+    }
+  };
+}
+
 function setSelection(questionId, optionIds) {
   if (!questionId) return;
   answersByQuestion.value = {
@@ -73,14 +112,23 @@ function setSelection(questionId, optionIds) {
 }
 
 onMounted(async () => {
+  const initial = await api.get(`/state/${props.token}`).catch(() => ({ data: null }));
+  if (initial?.data) {
+    state.value = normalizeStatePayload(initial.data);
+  }
+  if (initial?.data?.game?.uiLanguage) {
+    await setLanguage(initial.data.game.uiLanguage);
+  }
+
   socket.emit("join_game", { token: props.token });
 
   socket.on("game_state", (s) => {
+    const nextState = normalizeStatePayload(s);
     if (s?.game?.uiLanguage) {
       setLanguage(s.game.uiLanguage).catch(() => {});
     }
-    state.value = s;
-    const currentQid = s.questions?.[s.game?.currentQuestionIndex ?? 0]?.id;
+    state.value = nextState;
+    const currentQid = nextState.questions?.[nextState.game?.currentQuestionIndex ?? 0]?.id;
     if (currentQid && Array.isArray(s?.progress?.playerSelection)) {
       setSelection(currentQid, s.progress.playerSelection);
     }
@@ -90,10 +138,12 @@ onMounted(async () => {
   const { data } = await api.post(`/join/${props.token}`, {});
   participantId.value = data.participantId;
 
-  const s = await api.get(`/state/${props.token}`);
-  state.value.player = s.data.player;
-  if (s?.data?.game?.uiLanguage) {
-    await setLanguage(s.data.game.uiLanguage);
+  const afterJoin = await api.get(`/state/${props.token}`).catch(() => ({ data: null }));
+  if (afterJoin?.data) {
+    state.value = normalizeStatePayload(afterJoin.data);
+  }
+  if (afterJoin?.data?.game?.uiLanguage) {
+    await setLanguage(afterJoin.data.game.uiLanguage);
   }
 });
 

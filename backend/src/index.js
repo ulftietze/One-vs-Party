@@ -52,6 +52,9 @@ const AUTO_REVEAL_DELAY_MS = Math.max(500, Number(process.env.AUTO_REVEAL_DELAY_
 const DEFAULT_AUTO_REVEAL_DELAY_SECONDS = Math.max(1, Math.round(AUTO_REVEAL_DELAY_MS / 1000));
 const MIN_AUTO_REVEAL_DELAY_SECONDS = 1;
 const MAX_AUTO_REVEAL_DELAY_SECONDS = 60;
+const GAME_STATE_THROTTLE_MS = Math.max(0, Number(process.env.GAME_STATE_THROTTLE_MS || 120));
+const LIVE_SCORE_RANKING_LIMIT = Math.max(0, Number(process.env.LIVE_SCORE_RANKING_LIMIT || 100));
+const SOCKET_JOIN_SEND_STATE = String(process.env.SOCKET_JOIN_SEND_STATE || "false").trim().toLowerCase() === "true";
 const QUESTION_PACKAGE_VERSION = 1;
 const FULL_GAME_EXPORT_VERSION = 1;
 
@@ -168,6 +171,7 @@ const uploadMedia = multer({
   limits: uploadLimits
 });
 const autoRevealTimers = new Map();
+const gameStateEmitTimers = new Map();
 const BUILTIN_BIRTHDAY_MEDIA = Object.freeze({
   cakeImage: "/media/builtin/geburtstag/torte_30.svg",
   drinkImage: "/media/builtin/geburtstag/getraenk_kaffee.svg",
@@ -1548,9 +1552,11 @@ function hasSubmittedAnswerTokens(questionType, tokens, optionCount = 0) {
 function clearAutoRevealTimer(gameId) {
   const key = String(gameId);
   const timer = autoRevealTimers.get(key);
-  if (!timer) return;
-  clearTimeout(timer.timeoutId);
-  autoRevealTimers.delete(key);
+  if (timer) {
+    clearTimeout(timer.timeoutId);
+    autoRevealTimers.delete(key);
+  }
+  clearScheduledGameStateEmit(gameId);
 }
 
 async function canAutoRevealNow(gameId, expectedQuestionId = null) {
@@ -1932,20 +1938,85 @@ function buildResultsSvg(payload) {
   `;
 }
 
-async function emitGameState(gameId) {
-  const game = await models.Game.findByPk(gameId);
-  const full = await loadGameFull(models, gameId);
-  // Score wird nur bis zur zuletzt "revealed" Frage gezählt
-  const score = await computeScore(models, gameId, { uptoIndex: game.revealedQuestionIndex });
+async function buildRevealPayload({ gameId, game, full }) {
+  if (game.phase !== "revealed" || !full?.Questions?.[game.currentQuestionIndex]) return null;
 
-  const guestCount = await models.Participant.count({ where: { GameId: gameId, kind: "guest" } });
+  const q = full.Questions[game.currentQuestionIndex];
+  const type = normalizeQuestionType(q.type);
+  const options = sortedOptions(q);
+  const correct = CHOICE_LIKE_TYPES.has(type)
+    ? options.filter(o => o.isCorrect).map(o => ({ id: o.id, text: o.text }))
+    : [];
+  const correctOrder = type === "order"
+    ? options.map(o => ({ id: o.id, text: o.text }))
+    : [];
+  const guestVotes = await computeGuestVoteCounts(models, { gameId, question: q });
+  const playerAnswer = await models.Answer.findOne({
+    where: { QuestionId: q.id, ParticipantId: game.PlayerId }
+  });
+
+  let estimate = null;
+  if (type === "estimate") {
+    const guests = await models.Participant.findAll({ where: { GameId: gameId, kind: "guest" }, attributes: ["id"] });
+    const guestIds = guests.map(g => g.id);
+    const guestAnswers = guestIds.length
+      ? await models.Answer.findAll({ where: { QuestionId: q.id, ParticipantId: guestIds } })
+      : [];
+    const guestValues = guestAnswers
+      .map(a => Number(parseAnswerTokens(q, a.optionIds)[0]))
+      .filter(v => Number.isFinite(v));
+    const target = Number(q.estimateTarget);
+    const playerGuess = Number(parseAnswerTokens(q, playerAnswer?.optionIds || "")[0]);
+    estimate = {
+      target: Number.isFinite(target) ? target : null,
+      tolerance: Math.max(0, Number(q.estimateTolerance || 0)),
+      playerGuess: Number.isFinite(playerGuess) ? playerGuess : null,
+      guestMedian: median(guestValues)
+    };
+  }
+
+  return {
+    questionId: q.id,
+    questionType: type,
+    correct,
+    correctOrder,
+    guestVotes,
+    playerAnswer: playerAnswer ? parseAnswerTokens(q, playerAnswer.optionIds) : [],
+    estimate,
+    solution: {
+      type: q.solutionType || "none",
+      text: q.solutionText || "",
+      image: q.solutionImage || "",
+      audio: q.solutionAudio || "",
+      video: q.solutionVideo || ""
+    }
+  };
+}
+
+async function buildRealtimeStatePayload(gameId, { rankingLimit = LIVE_SCORE_RANKING_LIMIT } = {}) {
+  const game = await models.Game.findByPk(gameId);
+  if (!game) return null;
+
+  const full = await loadGameFull(models, gameId);
+  if (!full) return null;
+
+  // Score wird nur bis zur zuletzt "revealed" Frage gezählt
+  const score = await computeScore(models, gameId, {
+    uptoIndex: game.revealedQuestionIndex,
+    rankingLimit: rankingLimit > 0 ? rankingLimit : null
+  });
+
+  const guestParticipants = await models.Participant.findAll({
+    where: { GameId: gameId, kind: "guest" },
+    attributes: ["id"]
+  });
+  const guestIdList = guestParticipants.map(g => g.id);
+  const guestCount = guestIdList.length;
 
   // Live-Progress für aktuelle Frage berechnen
-  let progress = { guestAnsweredCount: 0, guestTotal: guestCount, playerAnswered: false, playerSelection: [] };
+  const progress = { guestAnsweredCount: 0, guestTotal: guestCount, playerAnswered: false, playerSelection: [] };
   const currentQ = full?.Questions?.[game.currentQuestionIndex];
   if (currentQ) {
-    const guestIds = await models.Participant.findAll({ where: { GameId: gameId, kind: "guest" }, attributes: ["id"] });
-    const guestIdList = guestIds.map(g => g.id);
     if (guestIdList.length) {
       progress.guestAnsweredCount = await models.Answer.count({ where: { QuestionId: currentQ.id, ParticipantId: guestIdList } });
     }
@@ -1953,8 +2024,8 @@ async function emitGameState(gameId) {
     progress.playerAnswered = !!playerAns;
     progress.playerSelection = playerAns ? parseAnswerTokens(currentQ, playerAns.optionIds) : [];
   }
-  
-  io.to(gameRoom(gameId)).emit("game_state", {
+
+  const gameStatePayload = {
     game: {
       id: game.id,
       title: game.title,
@@ -1986,58 +2057,54 @@ async function emitGameState(gameId) {
     questions: full?.Questions?.map(mapQuestionForSocket) || [],
     score,
     progress
-  });
+  };
 
-  if (game.phase === "revealed" && full?.Questions?.[game.currentQuestionIndex]) {
-    const q = full.Questions[game.currentQuestionIndex];
-    const type = normalizeQuestionType(q.type);
-    const options = sortedOptions(q);
-    const correct = CHOICE_LIKE_TYPES.has(type)
-      ? options.filter(o => o.isCorrect).map(o => ({ id: o.id, text: o.text }))
-      : [];
-    const correctOrder = type === "order"
-      ? options.map(o => ({ id: o.id, text: o.text }))
-      : [];
-    const guestVotes = await computeGuestVoteCounts(models, { gameId, question: q });
-    const playerAnswer = await models.Answer.findOne({
-      where: { QuestionId: q.id, ParticipantId: game.PlayerId }
-    });
-    let estimate = null;
-    if (type === "estimate") {
-      const guests = await models.Participant.findAll({ where: { GameId: gameId, kind: "guest" }, attributes: ["id"] });
-      const guestIds = guests.map(g => g.id);
-      const guestAnswers = guestIds.length
-        ? await models.Answer.findAll({ where: { QuestionId: q.id, ParticipantId: guestIds } })
-        : [];
-      const guestValues = guestAnswers
-        .map(a => Number(parseAnswerTokens(q, a.optionIds)[0]))
-        .filter(v => Number.isFinite(v));
-      const target = Number(q.estimateTarget);
-      const playerGuess = Number(parseAnswerTokens(q, playerAnswer?.optionIds || "")[0]);
-      estimate = {
-        target: Number.isFinite(target) ? target : null,
-        tolerance: Math.max(0, Number(q.estimateTolerance || 0)),
-        playerGuess: Number.isFinite(playerGuess) ? playerGuess : null,
-        guestMedian: median(guestValues)
-      };
-    }
-    io.to(gameRoom(gameId)).emit("reveal", {
-      questionId: q.id,
-      questionType: type,
-      correct,
-      correctOrder,
-      guestVotes,
-      playerAnswer: playerAnswer ? parseAnswerTokens(q, playerAnswer.optionIds) : [],
-      estimate,
-      solution: {
-        type: q.solutionType || "none",
-        text: q.solutionText || "",
-        image: q.solutionImage || "",
-        audio: q.solutionAudio || "",
-        video: q.solutionVideo || ""
-      }
-    });
+  const revealPayload = await buildRevealPayload({ gameId, game, full });
+  return { gameStatePayload, revealPayload };
+}
+
+async function emitGameState(gameId, { rankingLimit = LIVE_SCORE_RANKING_LIMIT } = {}) {
+  clearScheduledGameStateEmit(gameId);
+  const state = await buildRealtimeStatePayload(gameId, { rankingLimit });
+  if (!state) return false;
+  io.to(gameRoom(gameId)).emit("game_state", state.gameStatePayload);
+  if (state.revealPayload) {
+    io.to(gameRoom(gameId)).emit("reveal", state.revealPayload);
   }
+  return true;
+}
+
+async function emitGameStateToSocket(socket, gameId, { rankingLimit = LIVE_SCORE_RANKING_LIMIT } = {}) {
+  const state = await buildRealtimeStatePayload(gameId, { rankingLimit });
+  if (!state) return false;
+  socket.emit("game_state", state.gameStatePayload);
+  if (state.revealPayload) {
+    socket.emit("reveal", state.revealPayload);
+  }
+  return true;
+}
+
+function clearScheduledGameStateEmit(gameId) {
+  const key = String(gameId);
+  const timer = gameStateEmitTimers.get(key);
+  if (!timer) return;
+  clearTimeout(timer.timeoutId);
+  gameStateEmitTimers.delete(key);
+}
+
+function scheduleEmitGameState(gameId, { delayMs = GAME_STATE_THROTTLE_MS } = {}) {
+  const key = String(gameId);
+  if (gameStateEmitTimers.has(key)) return false;
+  const timeoutId = setTimeout(async () => {
+    gameStateEmitTimers.delete(key);
+    try {
+      await emitGameState(gameId);
+    } catch (err) {
+      logCompactError("scheduled game_state emit failed", err);
+    }
+  }, Math.max(0, Number(delayMs || 0)));
+  gameStateEmitTimers.set(key, { timeoutId, createdAt: Date.now() });
+  return true;
 }
 
 async function requireToken(req, res, next) {
@@ -3383,7 +3450,7 @@ app.post("/api/join/:token", requireToken, async (req, res) => {
         }
         if (!p.clientKey && clientKey) await p.update({ clientKey });
         if (nickname && nickname !== p.nickname) await p.update({ nickname });
-        await emitGameState(req.game.id);
+        scheduleEmitGameState(req.game.id);
         return res.json({ participantId: p.id, kind: "guest", nickname: p.nickname });
       }
       return res.status(404).json({ error: "participant_not_found" });
@@ -3391,7 +3458,7 @@ app.post("/api/join/:token", requireToken, async (req, res) => {
 
     if (!nickname) return res.status(400).json({ error: "invalid_name" });
     const p = await models.Participant.create({ GameId: req.game.id, kind: "guest", nickname, clientKey });
-    await emitGameState(req.game.id);
+    scheduleEmitGameState(req.game.id);
     return res.json({ participantId: p.id, kind: "guest", nickname: p.nickname });
   }
 
@@ -3402,7 +3469,7 @@ app.post("/api/join/:token", requireToken, async (req, res) => {
     if (nickname && nickname !== player.nickname) {
       await player.update({ nickname });
     }
-    await emitGameState(req.game.id);
+    scheduleEmitGameState(req.game.id);
     return res.json({ participantId: player.id, kind: "player", nickname: player.nickname });
   }
 
@@ -3486,7 +3553,7 @@ app.post("/api/answer/:token", requireToken, async (req, res) => {
   else await models.Answer.create(payload);
 
   io.to(gameRoom(req.game.id)).emit("answer_received", { participantId, questionId });
-  await emitGameState(req.game.id);
+  scheduleEmitGameState(req.game.id);
   await scheduleAutoRevealIfReady(req.game.id);
   res.json({ ok: true });
 });
@@ -3501,7 +3568,9 @@ io.on("connection", (socket) => {
 
     socket.join(gameRoom(data.game.id));
     socket.emit("joined", { gameId: data.game.id, linkType: data.link.type });
-    await emitGameState(data.game.id);
+    if (SOCKET_JOIN_SEND_STATE) {
+      await emitGameStateToSocket(socket, data.game.id);
+    }
   });
 
   // Client keep-alive (hilft gegen Idle-Timeouts bei Proxies / Mobilfunk)

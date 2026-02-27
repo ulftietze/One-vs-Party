@@ -1,0 +1,13 @@
+services:
+  loadtest:
+    build:
+      context: ..
+      dockerfile: loadtest/Dockerfile
+    working_dir: /workspace
+    volumes:
+      - ../:/workspace
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    entrypoint:
+      - node
+      - /app/load-test.mjs
