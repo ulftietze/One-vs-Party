@@ -16,13 +16,13 @@
       <div :class="['bubble-grid', { 'bubble-grid--dense': items.length > 4 }]"
            :style="{ '--bubble-cols': bubbleColumns }">
         <div v-for="(item, idx) in items" :key="`bubble-${item.id}-${item.totalPct}-${item.count}`"
-             :class="['bubble-slot', `is-${bubblePercentPlacement(idx)}`]"
+             :class="['bubble-slot', `is-${bubblePercentPlacement(idx)}`, { 'is-correct': item.isCorrect }]"
              :style="{ '--bubble-pct': `${item.renderPct}%`, '--bubble-i': idx }">
           <article :class="['bubble-card', { 'is-correct': item.isCorrect, 'is-player': item.playerSelected }]">
             <div class="bubble-head">
               <div class="bubble-head-left">
                 <span class="bubble-letter">{{ item.letter }}</span>
-                <span v-if="item.playerSelected" data-no-i18n="1" class="bubble-flag bubble-flag--player">P</span>
+                <span v-if="item.playerSelected" data-no-i18n="1" class="bubble-flag bubble-flag--player">{{ playerLabel }}</span>
                 <span v-if="item.isCorrect" class="bubble-flag bubble-flag--correct">✓</span>
               </div>
             </div>
@@ -40,9 +40,9 @@
 
     <div v-else class="vertical-shell">
       <div class="vertical-bars">
-        <div v-for="item in items" :key="item.id" class="vertical-col">
+        <div v-for="item in items" :key="item.id" :class="['vertical-col', { 'is-correct': item.isCorrect }]">
           <div class="vertical-count">{{ item.count }}</div>
-          <div class="vertical-track">
+          <div :class="['vertical-track', { 'is-correct': item.isCorrect }]">
             <div class="vertical-fill"
                  :class="{ 'is-correct': item.isCorrect, 'is-player': item.playerSelected }"
                  :style="{ height: `${item.heightPct}%` }"></div>
@@ -56,7 +56,7 @@
       </div>
 
       <div class="vertical-legend">
-        <div v-for="item in items" :key="`legend-${item.id}`" class="legend-row">
+        <div v-for="item in items" :key="`legend-${item.id}`" :class="['legend-row', { 'is-correct': item.isCorrect }]">
           <span class="legend-letter">{{ item.letter }}</span>
           <img v-if="item.image" :src="item.image" alt="Option image" class="legend-thumb" />
           <span data-no-i18n="1" class="legend-text">{{ item.text || `#${item.id}` }}</span>
@@ -224,7 +224,8 @@ function bubblePercentPlacement(index) {
 }
 
 .mini-row.is-correct {
-  box-shadow: inset 0 0 0 1px #99f6e4;
+  border-color: #22c55e;
+  box-shadow: inset 0 0 0 1px rgba(34, 197, 94, 0.35);
 }
 
 .bubble-shell {
@@ -283,6 +284,10 @@ function bubblePercentPlacement(index) {
   box-sizing: border-box;
 }
 
+.bubble-slot.is-correct {
+  border-radius: 26px;
+}
+
 .bubble-slot.is-top {
   padding-top: 0;
 }
@@ -328,8 +333,9 @@ function bubblePercentPlacement(index) {
 }
 
 .bubble-card.is-correct {
+  border-width: 2px;
   border-color: #22c55e;
-  box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.24), 0 14px 24px rgba(15, 23, 42, 0.18);
+  box-shadow: 0 14px 24px rgba(15, 23, 42, 0.18);
 }
 
 .bubble-card.is-player {
@@ -351,6 +357,7 @@ function bubblePercentPlacement(index) {
   display: flex;
   align-items: center;
   gap: 6px;
+  flex-wrap: wrap;
 }
 
 .bubble-letter {
@@ -384,6 +391,13 @@ function bubblePercentPlacement(index) {
   background: rgba(255, 241, 242, 0.95);
   color: #be123c;
   border-color: rgba(251, 113, 133, 0.7);
+  max-width: 220px;
+  min-height: 24px;
+  white-space: normal;
+  text-align: center;
+  line-height: 1.05;
+  padding-top: 3px;
+  padding-bottom: 3px;
 }
 
 .bubble-flag--correct {
@@ -524,6 +538,11 @@ function bubblePercentPlacement(index) {
   padding: 8px 6px 4px;
 }
 
+.vertical-track.is-correct {
+  border-color: #22c55e;
+  box-shadow: inset 0 0 0 1px rgba(34, 197, 94, 0.28);
+}
+
 .vertical-fill {
   width: min(80%, 66px);
   border-radius: 9px 9px 4px 4px;
@@ -584,6 +603,9 @@ function bubblePercentPlacement(index) {
   color: #b91c1c;
   border-color: #fca5a5;
   background: #fff1f2;
+  white-space: normal;
+  text-align: center;
+  line-height: 1.1;
 }
 
 .vertical-badge--correct {
@@ -605,6 +627,12 @@ function bubblePercentPlacement(index) {
   border-radius: 10px;
   background: #fff;
   padding: 8px 10px;
+}
+
+.legend-row.is-correct {
+  border-color: #22c55e;
+  box-shadow: inset 0 0 0 1px rgba(34, 197, 94, 0.32);
+  background: linear-gradient(180deg, #f4fff7 0%, #ecfdf3 100%);
 }
 
 .legend-letter {

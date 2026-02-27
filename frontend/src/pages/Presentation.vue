@@ -323,7 +323,7 @@
                   :playerAnswer="revealedPlayerAnswer"
                   :player-label="playerName"
                   mode="mini"
-                  :max-items="3" />
+                  :max-items="4" />
               </div>
             </div>
 
@@ -668,8 +668,19 @@ const hasRevealedSolution = computed(() => {
   const s = revealedSolution.value || {};
   return !!(String(s.text || "").trim() || s.image || s.audio || s.video);
 });
-const showMiniVoteChart = computed(() => showVoteChart.value && hasRevealedSolution.value && !statsModalOpen.value);
-const showStatsLauncher = computed(() => showVoteChart.value && !hasRevealedSolution.value && !statsModalOpen.value);
+const miniVotePreviewLimit = 4;
+const hasTooManyVotesForMiniPreview = computed(() => effectiveVotes.value.length > miniVotePreviewLimit);
+const showMiniVoteChart = computed(() =>
+  showVoteChart.value &&
+  hasRevealedSolution.value &&
+  !hasTooManyVotesForMiniPreview.value &&
+  !statsModalOpen.value
+);
+const showStatsLauncher = computed(() =>
+  showVoteChart.value &&
+  (!hasRevealedSolution.value || hasTooManyVotesForMiniPreview.value) &&
+  !statsModalOpen.value
+);
 
 const playerAnswered = ref(false);
 let lastQuestionId = null;

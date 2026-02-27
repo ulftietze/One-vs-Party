@@ -3570,6 +3570,25 @@ io.on("connection", (socket) => {
     socket.emit("joined", { gameId: data.game.id, linkType: data.link.type });
     if (SOCKET_JOIN_SEND_STATE) {
       await emitGameStateToSocket(socket, data.game.id);
+      return;
+    }
+
+    // Performance mode: avoid full game_state on join, but if current phase is
+    // already revealed we still need reveal details for page reloads.
+    if (data.game?.phase === "revealed") {
+      try {
+        const full = await loadGameFull(models, data.game.id);
+        const revealPayload = await buildRevealPayload({
+          gameId: data.game.id,
+          game: data.game,
+          full
+        });
+        if (revealPayload) {
+          socket.emit("reveal", revealPayload);
+        }
+      } catch (err) {
+        logCompactError("join_game reveal payload failed", err);
+      }
     }
   });
 
